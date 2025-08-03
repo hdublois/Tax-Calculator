@@ -327,8 +327,6 @@ class Parameters(paramtools.Parameters):
             # that revert to their pre-TCJA values.
             long_params = ['II_brk7', 'II_brk6', 'II_brk5', 'II_brk4',
                            'II_brk3', 'II_brk2', 'II_brk1',
-                           'PT_brk7', 'PT_brk6', 'PT_brk5', 'PT_brk4',
-                           'PT_brk3', 'PT_brk2', 'PT_brk1',
                            'PT_qbid_taxinc_thd',
                            'ALD_BusinessLosses_c',
                            'STD', 'II_em', 'II_em_ps',
@@ -837,13 +835,12 @@ class Parameters(paramtools.Parameters):
         # params_to_trace = ['II_em']
         # params_to_trace = ['II_brk3']
         params_to_trace = ['EITC_c']
-        # params_to_trace = ['ID_AmountCap_Switch']
         if trace and param in params_to_trace:  # pragma: no cover
             vlabel = None
             vvalue = None
             if len(extend_vo) > 2:
                 extend_vo_keys = extend_vo.keys()
-                vo_labels = ['MARS', 'EIC', 'idedtype']
+                vo_labels = ['MARS', 'EIC']
                 for vo_label in vo_labels:
                     if vo_label in extend_vo_keys:
                         vlabel = vo_label

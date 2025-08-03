@@ -647,6 +647,25 @@
       "desc": "Filing unit's share of total business property owned by the pass-through business",
       "form": {"2018-20??": "specified in custom data"},
       "availability": ""
+    },
+
+    "auto_loan_interest": {
+      "type": "float",
+      "desc": "Filing unit's interest payments on OBBBA-qualified auto loans",
+      "form": {"2025-20??": "specified in custom data"},
+      "availability": ""
+    },
+    "overtime_income": {
+      "type": "float",
+      "desc": "Filing unit's OBBBA-qualified overtime income",
+      "form": {"2025-20??": "specified in custom data"},
+      "availability": ""
+    },
+    "tip_income": {
+      "type": "float",
+      "desc": "Filing unit's OBBBA-qualified tip income",
+      "form": {"2025-20??": "specified in custom data"},
+      "availability": ""
     }
   },
   "calc": {
@@ -798,7 +817,7 @@
     },
     "c04470": {
       "type": "float",
-      "desc": "Itemized deductions after phase-out (zero for non-itemizers)",
+      "desc": "Itemized deductions after limitations (zero for non-itemizers)",
       "form": {"2013-2017": "1040 line 40",
                "2018-20??": "1040 line 8"}
     },
@@ -936,24 +955,9 @@
       "desc": "Sch A: Medical expenses deducted (component of pre-limitation c21060 total)",
       "form": {"2013-20??": "calculated variable"}
     },
-    "e17500_capped": {
-      "type": "float",
-      "desc": "Sch A: Medical expenses, capped as a decimal fraction of AGI",
-      "form": {"2013-20??": "calculated variable"}
-    },
     "c18300": {
       "type": "float",
       "desc": "Sch A: State and local taxes plus real estate taxes deducted (component of pre-limitation c21060 total)",
-      "form": {"2013-20??": "calculated variable"}
-    },
-    "e18400_capped": {
-      "type": "float",
-      "desc": "Sch A: State and local income taxes deductible, capped as a decimal fraction of AGI",
-      "form": {"2013-20??": "calculated variable"}
-    },
-    "e18500_capped": {
-      "type": "float",
-      "desc": "Sch A: State and local real estate taxes deductible, capped as a decimal fraction of AGI",
       "form": {"2013-20??": "calculated variable"}
     },
     "c19200": {
@@ -961,24 +965,9 @@
       "desc": "Sch A: Interest deducted (component of pre-limitation c21060 total)",
       "form": {"2013-20??": "calculated variable"}
     },
-    "e19200_capped": {
-      "type": "float",
-      "desc": "Sch A: Interest deduction deductible, capped as a decimal fraction of AGI",
-      "form": {"2013-20??": "calculated variable"}
-    },
     "c19700": {
       "type": "float",
       "desc": "Sch A: Charity contributions deducted (component of pre-limitation c21060 total)",
-      "form": {"2013-20??": "calculated variable"}
-    },
-    "e19800_capped": {
-      "type": "float",
-      "desc": "Sch A: Charity cash contributions deductible, capped as a decimal fraction of AGI",
-      "form": {"2013-20??": "calculated variable"}
-    },
-    "e20100_capped": {
-      "type": "float",
-      "desc": "Sch A: Charity noncash contributions deductible, capped as a decimal fraction of AGI",
       "form": {"2013-20??": "calculated variable"}
     },
     "c20500": {
@@ -986,19 +975,9 @@
       "desc": "Sch A: Net casualty or theft loss deducted (component of pre-limitation c21060 total)",
       "form": {"2013-20??": "calculated variable"}
     },
-    "g20500_capped": {
-      "type": "float",
-      "desc": "Sch A: Gross casualty or theft loss deductible, capped as a decimal fraction of AGI",
-      "form": {"2013-20??": "calculated variable"}
-    },
     "c20800": {
       "type": "float",
       "desc": "Sch A: Net limited miscellaneous deductions deducted (component of pre-limitation c21060 total)",
-      "form": {"2013-20??": "calculated variable"}
-    },
-    "e20400_capped": {
-      "type": "float",
-      "desc": "Sch A: Gross miscellaneous deductions deductible, capped as a decimal fraction of AGI",
       "form": {"2013-20??": "calculated variable"}
     },
     "c21040": {
@@ -1169,6 +1148,26 @@
       "type": "float",
       "desc": "search taxcalc/calcfunctions.py for how calculated and used",
       "form": {"2013-20??": "calculated variable"}
+    },
+    "senior_deduction": {
+      "type": "float",
+      "desc": "Deduction for elderly head and/or spouse",
+      "form": {"2025-20??": "calculated variable"}
+    },
+    "auto_loan_interest_deduction": {
+      "type": "float",
+      "desc": "Deduction for payment of qualified auto loan interest",
+      "form": {"2025-20??": "calculated variable"}
+    },
+    "ALD_OvertimeIncome": {
+      "type": "float",
+      "desc": "Above-the-line deduction for qualified overtime income",
+      "form": {"2025-20??": "calculated variable"}
+    },
+    "ALD_TipIncome": {
+      "type": "float",
+      "desc": "Above-the-line deduction for qualified tip income",
+      "form": {"2025-20??": "calculated variable"}
     },
     "ubi": {
       "type": "float",

@@ -62,6 +62,7 @@ def test_incorrect_implement_reform_usage():
         pol.implement_reform({2020: {'II_em': -1000}})
 
 
+@pytest.mark.local
 def test_json_reform_url():
     """
     Test reading a JSON reform from a URL. Results from the URL are expected
@@ -640,8 +641,6 @@ def test_section_titles(tests_path):
         return sdict
     # begin main logic of test_section_titles
     # specify expected section titles ordered as on the Tax-Brain webapp
-    ided_ceiling_pct = ('Ceiling On The Benefit Of Itemized Deductions '
-                        'As A Percent Of Deductible Expenses')
     cgqd_tax_same = ('Tax All Capital Gains And Dividends The Same '
                      'As Regular Taxable Income')
     valid_dict = {
@@ -694,10 +693,8 @@ def test_section_titles(tests_path):
             'Charity': 0,
             'Casualty': 0,
             'Miscellaneous': 0,
-            'Itemized Deduction Limitation': 0,
-            'Surtax On Itemized Deduction Benefits Above An AGI Threshold': 0,
-            ided_ceiling_pct: 0,
-            'Ceiling On The Amount Of Itemized Deductions Allowed': 0
+            'Itemized Deduction Limitation': 0,  # Pease
+            'Ceiling On The Amount Of Itemized Deductions Allowed': 0  # ID_c
         },
         'Capital Gains And Dividends': {
             'Regular - Long Term Capital Gains And Qualified Dividends': 0,
@@ -705,7 +702,7 @@ def test_section_titles(tests_path):
             cgqd_tax_same: 0
         },
         'Personal Income': {
-            'Regular: Non-AMT, Non-Pass-Through': 0,
+            'Regular: Non-AMT': 0,
             'Pass-Through': 0,
             'Alternative Minimum Tax': 0
         },
@@ -835,7 +832,7 @@ def test_reform_with_out_of_range_error():
     Try to use out-of-range values versus other parameter values in a reform.
     """
     pol = Policy()
-    reform = {'SS_thd85': {2020: [20000, 20000, 20000, 20000, 20000]}}
+    reform = {'SS_thd2': {2020: [20000, 20000, 20000, 20000, 20000]}}
     pol.implement_reform(reform, raise_errors=False)
     assert pol.parameter_errors
 
@@ -868,7 +865,7 @@ def test_reform_with_scalar_vector_errors():
     Test catching scalar-vector confusion.
     """
     policy1 = Policy()
-    reform1 = {'SS_thd85': {2020: 30000}}
+    reform1 = {'SS_thd2': {2020: 30000}}
     with pytest.raises(paramtools.ValidationError):
         policy1.implement_reform(reform1)
 
@@ -1517,28 +1514,6 @@ def test_cpi_offset_does_not_affect_wage_indexed_params():
         "SS_Earnings_c", year=list(range(2021, 2024 + 1))
     )
     np.testing.assert_equal(act_before_2025, exp_before_2025)
-
-
-def test_two_sets_of_tax_brackets():
-    """
-    Test that II_brk? and PT_brk? values are the same under current law.
-    """
-    pol = Policy()
-    brackets = range(1, 7 + 1)
-    years = range(Policy.JSON_START_YEAR, Policy.LAST_KNOWN_YEAR + 1)
-    emsg = ''
-    for year in years:
-        pol.set_year(year)
-        pdata = dict(pol.items())
-        for bnum in brackets:
-            ii_val = pdata[f'II_brk{bnum}']
-            pt_val = pdata[f'PT_brk{bnum}']
-            if not np.allclose(ii_val, pt_val):
-                emsg += f'II_brk{bnum} != PT_brk{bnum} for year {year}\n'
-                emsg += f'  II_brk{bnum} is {ii_val}\n'
-                emsg += f'  PT_brk{bnum} is {pt_val}\n'
-    if emsg:
-        raise ValueError(emsg)
 
 
 def test_ext_plus_ctc1_reform(tests_path):

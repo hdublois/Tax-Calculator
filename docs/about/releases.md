@@ -4,6 +4,72 @@ Go [here](https://github.com/PSLmodels/Tax-Calculator/pulls?q=is%3Apr+is%3Aclose
 for a complete commit history.
 
 
+2025-07-22 Release 5.1.0
+------------------------
+(last merged pull request is
+[#2933](https://github.com/PSLmodels/Tax-Calculator/pull/2933))
+
+**This is an enhancement release.**
+
+**API Changes**
+
+**New Features**
+- Add `PT_qbid_limited` policy parameter and associated logic
+[[#2923](https://github.com/PSLmodels/Tax-Calculator/pull/2923) by Martin Holmer]
+- Refactor tax-calculation function logic to reduce model execution time
+[[#2924](https://github.com/PSLmodels/Tax-Calculator/pull/2924) by Martin Holmer]
+- OBBBA-enhancement PRs 2927-2933 described in [issue 2926](https://github.com/PSLmodels/Tax-Calculator/issues/2926) by Martin Holmer
+
+**Bug Fixes**
+
+
+2025-07-02 Release 5.0.0
+------------------------
+(last merged pull request is
+[#2920](https://github.com/PSLmodels/Tax-Calculator/pull/2920))
+
+**This is a major release with changes that make Tax-Calculator incompatible with earlier releases.**
+
+**API Changes**
+- Rename two OASDI benefit taxation policy parameters
+[[#2918](https://github.com/PSLmodels/Tax-Calculator/pull/2918) by Martin Holmer]
+- Remove `PT_rt?` and `PT_brk?` and four associated `PT_*` parameters
+[[#2919](https://github.com/PSLmodels/Tax-Calculator/pull/2919) by Martin Holmer]
+- Remove several, but not all, policy parameters that limit itemized deductions
+[[#2920](https://github.com/PSLmodels/Tax-Calculator/pull/2920) by Martin Holmer]
+
+**New Features**
+
+**Bug Fixes**
+
+
+2025-06-13 Release 4.6.3
+------------------------
+(last merged pull request is
+[#2915](https://github.com/PSLmodels/Tax-Calculator/pull/2915))
+
+**This is a minor enhancement release.**
+
+**API Changes**
+
+**New Features**
+- Update CLI documentation
+[[#2907](https://github.com/PSLmodels/Tax-Calculator/pull/2907) by Martin Holmer]
+- Add deprecation warnings for planned Tax-Calculator 5.0.0 changes, add two tests, and remove one obsolete test
+[[#2908](https://github.com/PSLmodels/Tax-Calculator/pull/2908),
+ [#2909](https://github.com/PSLmodels/Tax-Calculator/pull/2909), and
+ [#2910](https://github.com/PSLmodels/Tax-Calculator/pull/2910) by Martin Holmer]
+- Add optional `--runid N` CLI option that simplifies output file names
+[[#2912](https://github.com/PSLmodels/Tax-Calculator/pull/2912) by Martin Holmer]
+- Add a default `income_group` definition to the CLI --dumpdb output
+[[#2913](https://github.com/PSLmodels/Tax-Calculator/pull/2913) and
+ [#2914](https://github.com/PSLmodels/Tax-Calculator/pull/2914) by Martin Holmer]
+- Standardize CLI output file name extensions
+[[#2915](https://github.com/PSLmodels/Tax-Calculator/pull/2915) by Martin Holmer]
+
+**Bug Fixes**
+
+
 2025-05-16 Release 4.6.2
 ------------------------
 (last merged pull request is
