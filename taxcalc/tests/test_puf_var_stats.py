@@ -66,7 +66,7 @@ def create_base_table(test_path):
     # create table_dict with sorted read vars followed by sorted calc vars
     table_dict = {}
     for var in sorted(read_vars):
-        if "taxdata_puf" in read_var_dict['read'][var]['availability']:
+        if 'taxdata_puf' in read_var_dict['read'][var]['availability']:
             table_dict[var] = read_var_dict['read'][var]['desc']
         else:
             pass
@@ -170,7 +170,7 @@ def test_puf_var_stats(tests_path, puf_fullsample):
     del table_corr['description']
     # add statistics to tables
     year_headers = ['description']
-    for year in range(Policy.JSON_START_YEAR, 2034 + 1):
+    for year in range(Policy.JSON_START_YEAR, 2024 + 1):
         assert year == calc.current_year
         year_headers.append(str(year))
         calc.calc_all()

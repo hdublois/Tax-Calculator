@@ -25,6 +25,7 @@ from taxcalc.calculator import Calculator
 
 
 START_YEAR = 2017
+NUM_YEARS = 19
 
 
 @pytest.mark.cpscsv_agg
@@ -33,7 +34,7 @@ def test_agg(tests_path, cps_fullsample):
     Test current-law aggregate taxes using cps.csv file.
     """
     # pylint: disable=too-many-statements,too-many-locals
-    nyrs = 10
+    nyrs = NUM_YEARS
     # create a baseline Policy object with current-law policy parameters
     baseline_policy = Policy()
     # create a Records object (rec) containing all cps.csv input records
@@ -44,7 +45,7 @@ def test_agg(tests_path, cps_fullsample):
     calc_start_year = calc.current_year
     # create aggregate diagnostic table (adt) as a Pandas DataFrame object
     adt = calc.diagnostic_table(nyrs).round(1)  # column labels are int
-    taxes_fullsample = adt.loc["Combined Liability ($b)"]
+    taxes_fullsample = adt.loc['Combined Liability ($b)']
     # compare actual DataFrame, adt, with the expected DataFrame, edt
     aggres_path = os.path.join(tests_path, 'cpscsv_agg_expect.csv')
     edt = pd.read_csv(aggres_path, index_col=False)  # column labels are str
@@ -75,7 +76,7 @@ def test_agg(tests_path, cps_fullsample):
     calc_subsample.advance_to_year(START_YEAR)
     adt_subsample = calc_subsample.diagnostic_table(nyrs)
     # compare combined tax liability from full and sub samples for each year
-    taxes_subsample = adt_subsample.loc["Combined Liability ($b)"]
+    taxes_subsample = adt_subsample.loc['Combined Liability ($b)']
     print('taxes_submsampe = ', taxes_subsample)
     print('TAXES full sample = ', taxes_fullsample)
     msg = ''

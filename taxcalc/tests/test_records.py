@@ -66,7 +66,7 @@ def test_read_cps_data(cps_fullsample):
     assert data.equals(cps_fullsample)
 
 
-@pytest.mark.parametrize("csv", [
+@pytest.mark.parametrize('csv', [
     (
         'RECID,MARS,e00200,e00200p,e00200s\n'
         '1,    2,   200000, 200000,   0.03\n'
@@ -134,21 +134,25 @@ def test_read_data(csv):
 def test_for_duplicate_names():
     """Test docstring"""
     records_varinfo = Records(data=None)
+    num_vars = 0
     varnames = set()
     for varname in records_varinfo.USABLE_READ_VARS:
         assert varname not in varnames
         varnames.add(varname)
         assert varname not in records_varinfo.CALCULATED_VARS
+    num_vars += len(varnames)
     varnames = set()
     for varname in records_varinfo.CALCULATED_VARS:
         assert varname not in varnames
         varnames.add(varname)
         assert varname not in records_varinfo.USABLE_READ_VARS
+    num_vars += len(varnames)
     varnames = set()
     for varname in records_varinfo.INTEGER_READ_VARS:
         assert varname not in varnames
         varnames.add(varname)
         assert varname in records_varinfo.USABLE_READ_VARS
+    assert num_vars == 212  # number of vars in records_variables.json
 
 
 def test_records_variables_content(tests_path):

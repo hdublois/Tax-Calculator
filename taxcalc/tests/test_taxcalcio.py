@@ -392,12 +392,18 @@ def test_ctor_init_with_cps_files():
     assert tcio.errmsg
 
 
-@pytest.mark.parametrize("dumpvar_str, str_valid, num_vars", [
+@pytest.mark.parametrize('dumpvar_str, str_valid, num_vars', [
     ("""
     MARS;iitax	payrolltax|combined,
     c00100
     surtax
-    """, True, 6),  # these 6 parameters minus MARS plus RECID
+    """, True, 6),  # these 6 variables minus MARS plus RECID
+
+    ('ALL', True, 209),
+    # 209 =
+    # all 212 vars in records_variables.json (see test_records.py)
+    # minus 5 TaxCalcIO.BASE_DUMPVARS omitting RECID (see taxcalcio.py)
+    # plus 2 TaxCalcIO.MTR_DUMPVARS (see taxcalcio.py)
 
     ("""
     MARS;iitax	payrolltax|kombined,c00100
@@ -743,7 +749,7 @@ def test_error_message_parsed_correctly(regression_reform_file):
               exact_calculations=False)
     assert isinstance(tcio.errmsg, str) and tcio.errmsg
     exp_errmsg = (
-        "AMEDT_rt[year=2021] 1.8 > max 1 \n"
-        "AMEDT_rt[year=2021] 1.8 > max 1 "
+        'AMEDT_rt[year=2021] 1.8 > max 1 \n'
+        'AMEDT_rt[year=2021] 1.8 > max 1 '
     )
     assert tcio.errmsg == exp_errmsg

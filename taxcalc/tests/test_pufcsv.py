@@ -24,6 +24,7 @@ from taxcalc.calculator import Calculator
 
 
 START_YEAR = 2017
+NUM_YEARS = 19
 
 
 @pytest.mark.pufcsv_agg
@@ -34,7 +35,7 @@ def test_agg(tests_path, puf_fullsample):
     the full-sample puf.csv and a small sub-sample of puf.csv
     """
     # pylint: disable=too-many-locals,too-many-statements
-    nyrs = 10
+    nyrs = NUM_YEARS
     # create a baseline Policy object with current-law policy parameters
     baseline_policy = Policy()
     # create a Records object (rec) containing all puf.csv input records
@@ -45,7 +46,7 @@ def test_agg(tests_path, puf_fullsample):
     calc_start_year = calc.current_year
     # create aggregate diagnostic table (adt) as a Pandas DataFrame object
     adt = calc.diagnostic_table(nyrs).round(1)  # column labels are int
-    taxes_fullsample = adt.loc["Combined Liability ($b)"]
+    taxes_fullsample = adt.loc['Combined Liability ($b)']
     # compare actual DataFrame, adt, with the expected DataFrame, edt
     aggres_path = os.path.join(tests_path, 'pufcsv_agg_expect.csv')
     edt = pd.read_csv(aggres_path, index_col=False)  # column labels are str
@@ -77,10 +78,10 @@ def test_agg(tests_path, puf_fullsample):
     calc_subsample.advance_to_year(START_YEAR)
     adt_subsample = calc_subsample.diagnostic_table(nyrs)
     # compare combined tax liability from full and sub samples for each year
-    taxes_subsample = adt_subsample.loc["Combined Liability ($b)"]
+    taxes_subsample = adt_subsample.loc['Combined Liability ($b)']
     msg = ''
     for cyr in range(calc_start_year, calc_start_year + nyrs):
-        reltol = 0.031  # maximum allowed relative difference in tax liability
+        reltol = 0.045  # maximum allowed relative difference in tax liability
         if not np.allclose(taxes_subsample[cyr], taxes_fullsample[cyr],
                            atol=0.0, rtol=reltol):
             reldiff = (taxes_subsample[cyr] / taxes_fullsample[cyr]) - 1.

@@ -96,23 +96,23 @@ def cli_tc_main():
                               '"stair-step" provisions in the tax law that '
                               'complicate marginal-tax-rate calculations.'),
                         default=False,
-                        action="store_true")
+                        action='store_true')
     parser.add_argument('--params',
                         help=('optional flag that causes policy parameter '
                               'values for baseline and reform to be written '
                               'to separate text files.'),
                         default=False,
-                        action="store_true")
+                        action='store_true')
     parser.add_argument('--tables',
                         help=('optional flag that causes distributional '
                               'tables to be written to a text file.'),
                         default=False,
-                        action="store_true")
+                        action='store_true')
     parser.add_argument('--graphs',
                         help=('optional flag that causes graphs to be written '
                               'to HTML files for viewing in browser.'),
                         default=False,
-                        action="store_true")
+                        action='store_true')
     parser.add_argument('--dumpdb',
                         help=('optional flag that causes TAXYEAR variable '
                               'values for each tax-unit under both '
@@ -121,7 +121,7 @@ def cli_tc_main():
                               'included in the database are controlled by '
                               'the --dumpvars option).'),
                         default=False,
-                        action="store_true")
+                        action='store_true')
     parser.add_argument('--dumpvars',
                         help=('DUMPVARS is name of optional file containing a '
                               'space-delimited list of variables to include '
@@ -129,7 +129,9 @@ def cli_tc_main():
                               'a minimal set of variables.  Valid variable '
                               'names include all variables in the '
                               'records_variables.json file plus mtr_itax and '
-                              'mtr_ptax (MTRs wrt taxpayer earnings).'),
+                              'mtr_ptax (MTRs wrt taxpayer earnings).  If '
+                              'DUMPVARS is ALL, then all valid variable names '
+                              'are included in the dump database.'),
                         default=None)
     parser.add_argument('--runid', metavar='N',
                         help=('N is a positive integer run id that is used '
@@ -142,23 +144,23 @@ def cli_tc_main():
                         help=('optional flag that suppresses messages about '
                               'input and output actions.'),
                         default=False,
-                        action="store_true")
+                        action='store_true')
     parser.add_argument('--test',
                         help=('optional flag that conducts installation '
                               'test, writes test result to stdout, '
                               'and quits leaving the test-related files.'),
                         default=False,
-                        action="store_true")
+                        action='store_true')
     parser.add_argument('--version',
                         help=('optional flag that writes Tax-Calculator '
                               'release version to stdout and quits.'),
                         default=False,
-                        action="store_true")
+                        action='store_true')
     parser.add_argument('--usage',
                         help=('optional flag that writes short usage '
                               'reminder to stdout and quits.'),
                         default=False,
-                        action="store_true")
+                        action='store_true')
     args = parser.parse_args()
     using_error_file = args.silent and args.runid != 0
     efilename = f'run{args.runid}.errors'
@@ -246,7 +248,9 @@ def cli_tc_main():
     # specify dumpvars_str from args.dumpvars file
     dumpvars_str = ''
     if args.dumpvars:
-        if os.path.exists(args.dumpvars):
+        if args.dumpvars == 'ALL':
+            dumpvars_str = 'ALL'
+        elif os.path.exists(args.dumpvars):
             with open(args.dumpvars, 'r', encoding='utf-8') as dfile:
                 dumpvars_str = dfile.read()
         else:
