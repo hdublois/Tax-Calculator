@@ -1060,6 +1060,11 @@
       "desc": "Credit for charitable giving",
       "form": {"2013-20??": "calculated variable"}
     },
+    "sgo_credit": {
+      "type": "float",
+      "desc": "Credit for contributions to scholarship granting organizations",
+      "form": {"2013-20??": "calculated variable"}
+    },
     "dwks10": {
       "type": "float",
       "desc": "search taxcalc/calcfunctions.py for how calculated and used",

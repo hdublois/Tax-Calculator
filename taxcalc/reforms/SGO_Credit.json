@@ -1,0 +1,23 @@
+// Title: Scholarship Granting Organization (SGO) Tax Credit
+// Reform_File_Author: Auto-generated
+// Reform_Reference: H.R.1 - One Big Beautiful Bill Act
+// Reform_Baseline: policy_current_law.json
+// Reform_Description:
+//      This reform file implements the Scholarship Granting Organization tax credit
+//      from H.R.1, providing a nonrefundable tax credit of $1,700 for all filers
+//      except $3,400 for married filing jointly.
+{
+    "CR_SGO_c": {
+        "2025": [1700.0, 3400.0, 1700.0, 1700.0, 1700.0],
+        "2026": [1700.0, 3400.0, 1700.0, 1700.0, 1700.0],
+        "2027": [1700.0, 3400.0, 1700.0, 1700.0, 1700.0],
+        "2028": [1700.0, 3400.0, 1700.0, 1700.0, 1700.0],
+        "2029": [1700.0, 3400.0, 1700.0, 1700.0, 1700.0],
+        "2030": [1700.0, 3400.0, 1700.0, 1700.0, 1700.0],
+        "2031": [1700.0, 3400.0, 1700.0, 1700.0, 1700.0],
+        "2032": [1700.0, 3400.0, 1700.0, 1700.0, 1700.0],
+        "2033": [1700.0, 3400.0, 1700.0, 1700.0, 1700.0],
+        "2034": [1700.0, 3400.0, 1700.0, 1700.0, 1700.0]
+    }
+}
+

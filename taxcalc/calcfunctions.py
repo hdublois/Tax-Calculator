@@ -2923,6 +2923,30 @@ def CharityCredit(e19800, e20100, c00100, CR_Charity_rt, CR_Charity_f,
 
 
 @iterate_jit(nopython=True)
+def SGO_Credit(MARS, CR_SGO_c, sgo_credit):
+    """
+    Computes nonrefundable Scholarship Granting Organization (SGO) credit.
+
+    Parameters
+    ----------
+    MARS: int
+        Filing (marital) status. (1=single, 2=joint, 3=separate,
+                                  4=household-head, 5=widow(er))
+    CR_SGO_c: list
+        Scholarship Granting Organization credit amount by filing status
+    sgo_credit: float
+        Credit for contributions to scholarship granting organizations
+
+    Returns
+    -------
+    sgo_credit: float
+        Credit for contributions to scholarship granting organizations
+    """
+    sgo_credit = CR_SGO_c[MARS - 1]
+    return sgo_credit
+
+
+@iterate_jit(nopython=True)
 def NonrefundableCredits(c05800, e07240, e07260, e07300, e07400,
                          e07600, p08000, odc,
                          personal_nonrefundable_credit,
@@ -2930,6 +2954,7 @@ def NonrefundableCredits(c05800, e07240, e07260, e07300, e07400,
                          CR_RetirementSavings_hc, CR_ForeignTax_hc,
                          CR_ResidentialEnergy_hc, CR_GeneralBusiness_hc,
                          CR_MinimumTax_hc, CR_OtherCredits_hc, charity_credit,
+                         sgo_credit,
                          c07180, c07200, c07220, c07230, c07240,
                          c07260, c07300, c07400, c07600, c08000):
     """
@@ -2971,6 +2996,8 @@ def NonrefundableCredits(c05800, e07240, e07260, e07300, e07400,
         Other Credit haircut
     charity_credit: float
         Credit for charitable giving
+    sgo_credit: float
+        Credit for contributions to scholarship granting organizations
     c07180: float
         Credit for child and dependent care expenses from Form 2441
     c07200: float
@@ -3017,6 +3044,8 @@ def NonrefundableCredits(c05800, e07240, e07260, e07300, e07400,
         Other credits
     charity_credit: float
         Credit for charitable giving
+    sgo_credit: float
+        Credit for contributions to scholarship granting organizations
     personal_nonrefundable_credit: float
         Personal nonrefundable credit
     """
@@ -3058,12 +3087,15 @@ def NonrefundableCredits(c05800, e07240, e07260, e07300, e07400,
     avail = avail - c08000
     charity_credit = min(charity_credit, avail)
     avail = avail - charity_credit
+    # Scholarship Granting Organization credit
+    sgo_credit = min(sgo_credit, avail)
+    avail = avail - sgo_credit
     # Personal nonrefundable credit
     personal_nonrefundable_credit = min(personal_nonrefundable_credit, avail)
     avail = avail - personal_nonrefundable_credit
     return (c07180, c07200, c07220, c07230, c07240, odc,
             c07260, c07300, c07400, c07600, c08000, charity_credit,
-            personal_nonrefundable_credit)
+            sgo_credit, personal_nonrefundable_credit)
 
 
 @iterate_jit(nopython=True)
@@ -3162,7 +3194,7 @@ def AdditionalCTC(codtc_limited, ACTC_c, n24, earned, ACTC_Income_thd,
 def C1040(c05800, c07180, c07200, c07220, c07230, c07240, c07260, c07300,
           c07400, c07600, c08000, e09700, e09800, e09900, niit, setax,
           ptax_amc, othertaxes, c07100, c09200, odc, charity_credit,
-          personal_nonrefundable_credit,
+          sgo_credit, personal_nonrefundable_credit,
           CTC_is_refundable, ODC_is_refundable):
     """
     Computes total used nonrefundable credits, c07100, othertaxes, and
@@ -3215,6 +3247,8 @@ def C1040(c05800, c07180, c07200, c07220, c07230, c07240, c07260, c07300,
         Other Dependent Credit
     charity_credit: float
         Credit for charitable giving
+    sgo_credit: float
+        Credit for contributions to scholarship granting organizations
     personal_nonrefundable_credit: float
         Personal nonrefundable credit
 
@@ -3233,7 +3267,7 @@ def C1040(c05800, c07180, c07200, c07220, c07230, c07240, c07260, c07300,
               c07220 * (1. - CTC_is_refundable) + c08000 +
               c07230 + c07240 + c07260 +
               odc * (1. - ODC_is_refundable) + charity_credit +
-              personal_nonrefundable_credit)
+              sgo_credit + personal_nonrefundable_credit)
     # tax after credits (2016 Form 1040, line 56)
     tax_net_nonrefundable_credits = max(0., c05800 - c07100)
     # tax (including othertaxes) before refundable credits

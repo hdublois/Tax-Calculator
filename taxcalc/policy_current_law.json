@@ -23021,6 +23021,53 @@
             "cps": true
         }
     },
+    "CR_SGO_c": {
+        "title": "Scholarship Granting Organization Credit amount",
+        "description": "Nonrefundable tax credit amount for contributions to scholarship granting organizations. $1,700 for all filers except $3,400 for married filing jointly.",
+        "notes": "",
+        "section_1": "",
+        "section_2": "",
+        "indexable": true,
+        "indexed": false,
+        "type": "float",
+        "value": [
+            {
+                "year": 2013,
+                "MARS": "single",
+                "value": 0.0
+            },
+            {
+                "year": 2013,
+                "MARS": "mjoint",
+                "value": 0.0
+            },
+            {
+                "year": 2013,
+                "MARS": "mseparate",
+                "value": 0.0
+            },
+            {
+                "year": 2013,
+                "MARS": "headhh",
+                "value": 0.0
+            },
+            {
+                "year": 2013,
+                "MARS": "widow",
+                "value": 0.0
+            }
+        ],
+        "validators": {
+            "range": {
+                "min": 0,
+                "max": 9e+99
+            }
+        },
+        "compatible_data": {
+            "puf": true,
+            "cps": true
+        }
+    },
     "SeniorDed_c": {
         "title": "Senior deduction amount per elderly head/spouse",
         "description": "Senior deduction is capped at this level per elderly head/spouse.",
