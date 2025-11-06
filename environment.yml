@@ -1,4 +1,4 @@
-name: taxcalc-dev
+name: sgo-taxcalc-dev
 channels:
   - conda-forge
 dependencies:
