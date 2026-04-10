@@ -7,7 +7,7 @@ from setuptools import setup
 with open("README.md", "r", encoding="utf-8") as f:
     longdesc = f.read()
 
-VERSION = "6.3.0"
+VERSION = "6.5.1"
 
 config = {
     "description": "Tax-Calculator",
@@ -26,6 +26,7 @@ config = {
         "bokeh>=2.4",
         "numba",
         "paramtools>=0.20.0",
+        "behresp"
     ],
     "classifiers": [
         "Development Status :: 4 - Beta",

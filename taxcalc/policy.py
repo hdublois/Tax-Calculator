@@ -43,7 +43,7 @@ class Policy(Parameters):
     JSON_START_YEAR = 2013  # remains the same unless earlier data added
     LAST_KNOWN_YEAR = 2026  # last year for which indexed param vals are known
     # should increase LAST_KNOWN_YEAR by one every calendar year
-    LAST_BUDGET_YEAR = 2035  # default value of last extrapolation year
+    LAST_BUDGET_YEAR = 2036  # default value of last extrapolation year
     # should increase LAST_BUDGET_YEAR by one every calendar year
 
     @staticmethod
@@ -114,11 +114,38 @@ class Policy(Parameters):
         'EITC_ps_MarriedJ': (
             'was renamed EITC_ps_addon_MarriedJ in Tax-Calculator 6.1.0'
         ),
+        # following parameters were removed in PR 2991
+        'ALD_OvertimeIncome_hc': 'was removed in Tax-Calculator 6.4.0',
+        'ALD_TipIncome_hc': 'was removed in Tax-Calculator 6.4.0',
+        # following parameters were renamed in PR 2991
+        'ALD_OvertimeIncome_c': (
+            'was renamed OvertimeIncomeDed_c in Tax-Calculator 6.4.0'
+        ),
+        'ALD_OvertimeIncome_ps': (
+            'was renamed OvertimeIncomeDed_ps in Tax-Calculator 6.4.0'
+        ),
+        'ALD_OvertimeIncome_prt': (
+            'was replaced by OvertimeIncomeDed_po_step_size and '
+            'OvertimeIncomeDed_po_rate_per_step in Tax-Calculator 6.4.0'
+        ),
+        'ALD_TipIncome_c': (
+            'was renamed TipIncomeDed_c in Tax-Calculator 6.4.0'
+        ),
+        'ALD_TipIncome_ps': (
+            'was renamed TipIncomeDed_ps in Tax-Calculator 6.4.0'
+        ),
+        'ALD_TipIncome_prt': (
+            'was replaced by TipIncomeDed_po_step_size and '
+            'TipIncomeDed_po_rate_per_step in Tax-Calculator 6.4.0'
+        ),
     }
     # (2) specify which Policy parameters have been redefined
     REDEFINED_PARAMS = {}
     # (3) specify which Policy parameters are wage (rather than price) indexed
-    WAGE_INDEXED_PARAMS = ['SS_Earnings_c', 'SS_Earnings_thd']
+    WAGE_INDEXED_PARAMS = [
+        'SS_Earnings_c', 'SS_Earnings_thd',
+        'eitc_claim_thd', 'actc_claim_thd'
+    ]
 
     def __init__(self,
                  gfactors=None,

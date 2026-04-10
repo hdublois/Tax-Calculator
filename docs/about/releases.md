@@ -5,6 +5,97 @@ Go
 for a complete commit history.
 
 
+2026-04-02 Release 6.5.1
+------------------------
+(last merged pull request is
+[#3010](https://github.com/PSLmodels/Tax-Calculator/pull/3010))
+
+**This is a minor enhancement release.**
+
+**API Changes**
+
+**New Features**
+- Add `behresp` to the install requirements in `setup.py` file
+  [[#3010](https://github.com/PSLmodels/Tax-Calculator/pull/3010)
+  by Jason DeBacker]
+
+
+2026-03-29 Release 6.5.0
+------------------------
+(last merged pull request is
+[#3007](https://github.com/PSLmodels/Tax-Calculator/pull/3007))
+
+**This is an enhancement release.**
+
+**API Changes**
+
+**New Features**
+- Revise documentation to reflect new 2022 TMD input data files.
+  [[#3007](https://github.com/PSLmodels/Tax-Calculator/pull/3007)
+  by Martin Holmer]
+- Revise code to handle new 2022 TMD input data files.
+  [[#3004](https://github.com/PSLmodels/Tax-Calculator/pull/3004)
+  by Martin Holmer]
+- Add new `growfactor.csv` file that extends through 2036.
+  [[#3006](https://github.com/PSLmodels/Tax-Calculator/pull/3006)
+  by Jason DeBacker]
+
+**Bug Fixes**
+- Fix alimony haircut parameter values in the `NoOBBBA.md` reform.
+  [[#3005](https://github.com/PSLmodels/Tax-Calculator/pull/3005)
+  by Max Kossek]
+
+
+2026-03-13 Release 6.4.1
+------------------------
+(last merged pull request is
+[#3002](https://github.com/PSLmodels/Tax-Calculator/pull/3002))
+
+**This is a minor enhancement release.**
+
+**API Changes**
+
+**New Features**
+- Add `eitc_claim_thd` and `actc_claim_thd` parameters
+  [[#3002](https://github.com/PSLmodels/Tax-Calculator/pull/3002)
+  by Martin Holmer]
+
+**Bug Fixes**
+
+
+2026-02-04 Release 6.4.0
+------------------------
+(last merged pull request is
+[#2996](https://github.com/PSLmodels/Tax-Calculator/pull/2996))
+
+**This is an enhancement release.**
+
+**API Changes**
+
+**New Features**
+- Several non-substantive clean-up changes to code
+  [[#2983](https://github.com/PSLmodels/Tax-Calculator/pull/2983),
+  [#2984](https://github.com/PSLmodels/Tax-Calculator/pull/2984),
+  [#2986](https://github.com/PSLmodels/Tax-Calculator/pull/2986), and
+  [#2990](https://github.com/PSLmodels/Tax-Calculator/pull/2990)
+  by Martin Holmer]
+- Generalize overtime/tip income deduction logic and rename associatd
+  policy parameters
+  [[#2991](https://github.com/PSLmodels/Tax-Calculator/pull/2991) and
+  [#2992](https://github.com/PSLmodels/Tax-Calculator/pull/2992)
+  by Martin Holmer]
+- Revise code to work with Pandas 3.0+
+  [[#2994](https://github.com/PSLmodels/Tax-Calculator/pull/2994) and
+  [#2995](https://github.com/PSLmodels/Tax-Calculator/pull/2995)
+  by Martin Holmer]
+- Changes made in preparation for new TMD data that will include
+  imputed variables
+  [[#2996](https://github.com/PSLmodels/Tax-Calculator/pull/2996) by
+  Martin Holmer]
+
+**Bug Fixes**
+
+
 2025-12-06 Release 6.3.0
 ------------------------
 (last merged pull request is

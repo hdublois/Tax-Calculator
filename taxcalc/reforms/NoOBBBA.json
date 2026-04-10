@@ -101,14 +101,10 @@
     "PT_qbid_alt_w2_wages_rt": {"2026": 0.0},
     "PT_qbid_alt_property_rt": {"2026": 0.0},
 
-    // Group P: Alimony
-    "ALD_AlimonyPaid_hc": {"2026": 0},
-    "ALD_AlimonyReceived_hc": {"2025": 0, "2026": 1},
-
     // New OBBBA parameters
+    "OvertimeIncomeDed_c": {"2025": [0, 0, 0, 0, 0]},
+    "TipIncomeDed_c": {"2025": 0},
     "AutoLoanInterestDed_c": {"2025": 0},
-    "ALD_OvertimeIncome_hc": {"2025": 1.0},
-    "ALD_TipIncome_hc": {"2025": 1.0},
 
     // Additional parameters
     "ID_Medical_frt": {"2026": 0.075}
