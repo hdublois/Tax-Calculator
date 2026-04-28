@@ -878,13 +878,14 @@ def MiscDed(age_head, age_spouse, MARS, c00100, exact,
         if MARS == 2 and age_spouse >= 65:
             seniors += 1
         if seniors > 0:
-            ded = seniors * SeniorDed_c
             po_start = SeniorDed_ps[MARS - 1]
             if magi > po_start:
                 excess_agi = magi - po_start
                 po_amount = excess_agi * SeniorDed_prt
-                ded = max(0., ded - po_amount)
-            senior_deduction = ded
+                per_person_ded = max(0., SeniorDed_c - po_amount)
+            else:
+                per_person_ded = SeniorDed_c
+            senior_deduction = seniors * per_person_ded
     # calculate overtime_income_deduction
     overtime_income_deduction = 0.
     if overtime_income > 0. and MARS != 3:
@@ -896,7 +897,7 @@ def MiscDed(age_head, age_spouse, MARS, c00100, exact,
             po_rate = OvertimeIncomeDed_po_rate_per_step
             if exact == 1:  # exact calculation as on tax forms
                 step_size = OvertimeIncomeDed_po_step_size
-                steps = math.ceil(excess_agi / step_size)
+                steps = math.floor(excess_agi / step_size)
                 po_amount = steps * step_size * po_rate
             else:  # smoothed calculation needed for sensible mtr calculation
                 po_amount = excess_agi * po_rate
@@ -913,7 +914,7 @@ def MiscDed(age_head, age_spouse, MARS, c00100, exact,
             po_rate = TipIncomeDed_po_rate_per_step
             if exact == 1:  # exact calculation as on tax forms
                 step_size = TipIncomeDed_po_step_size
-                steps = math.ceil(excess_agi / step_size)
+                steps = math.floor(excess_agi / step_size)
                 po_amount = steps * step_size * po_rate
             else:  # smoothed calculation needed for sensible mtr calculation
                 po_amount = excess_agi * po_rate
