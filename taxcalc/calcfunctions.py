@@ -341,89 +341,98 @@ def DependentCare(nu13, elderly_dependents, earned,
 
 
 @iterate_jit(nopython=True)
-def Adj(e03150, e03210, c03260,
-        e03270, e03300, e03400, e03500, e00800,
-        e03220, e03230, e03240, e03290, care_deduction,
-        ALD_StudentLoan_hc, ALD_SelfEmp_HealthIns_hc, ALD_KEOGH_SEP_hc,
-        ALD_EarlyWithdraw_hc, ALD_AlimonyPaid_hc, ALD_AlimonyReceived_hc,
-        ALD_EducatorExpenses_hc, ALD_HSADeduction_hc, ALD_IRAContributions_hc,
-        ALD_DomesticProduction_hc, ALD_Tuition_hc,
+def Adj(e03220, e03290, c03260, e03300, e03270,
+        e03400, e03500, e03150, e03210,
+        e03230, e03240, e00800, care_deduction,
+        ALD_EducatorExpenses_hc, ALD_HSADeduction_hc,
+        ALD_KEOGH_SEP_hc, ALD_SelfEmp_HealthIns_hc,
+        ALD_EarlyWithdraw_hc, ALD_AlimonyPaid_hc,
+        ALD_IRAContributions_hc, ALD_StudentLoan_hc,
+        ALD_Tuition_hc, ALD_DomesticProduction_hc,
+        ALD_AlimonyReceived_hc,
         c02900):
     """
     Adj calculates Form 1040 AGI adjustments (i.e., Above-the-Line Deductions).
+    Summands are ordered to match 2025 Schedule 1, Part II.
 
     Parameters
     -----
-    e03210: float
-        Student loan interest paid
     e03220: float
-        Educator expenses
-    e03150: float
-        Total deductible IRA plan contributions
-    e03230: float
-        Tuition and fees (Form 8917)
-    e03240: float
-        Domestic production activity deduction (Form 8903)
-    c03260: float
-        Self-employment tax deduction (after haircut)
-    e03270: float
-        Self-employed health insurance premiums
+        Educator expenses (Sch 1 line 11)
     e03290: float
-        HSA deduction (Form 8889)
+        HSA deduction, Form 8889 (Sch 1 line 13)
+    c03260: float
+        Deductible part of self-employment tax, after haircut (Sch 1 line 15)
     e03300: float
         Total deductible KEOGH/SEP/SIMPLE/etc. plan contributions
+        (Sch 1 line 16)
+    e03270: float
+        Self-employed health insurance premiums (Sch 1 line 17)
     e03400: float
-        Penalty on early withdrawal of savings deduction
+        Penalty on early withdrawal of savings (Sch 1 line 18)
     e03500: float
-        Alimony paid
+        Alimony paid (Sch 1 line 19a)
+    e03150: float
+        Total deductible IRA plan contributions (Sch 1 line 20)
+    e03210: float
+        Student loan interest paid (Sch 1 line 21)
+    e03230: float
+        Tuition and fees, Form 8917
+        (legacy; expired after 2020)
+    e03240: float
+        Domestic production activity deduction, Form 8903
+        (legacy; expired after 2017)
     e00800: float
         Alimony received
+        (Sch 1 Part I line 2a; reform-only AGI exclusion via haircut)
     care_deduction: float
-        Dependent care expense deduction
-    ALD_StudentLoan_hc: float
-        Student loan interest deduction haircut
-    ALD_SelfEmp_HealthIns_hc: float
-        Self-employed h.i. deduction haircut
+        Dependent care expense deduction (reform construct)
+    ALD_EducatorExpenses_hc: float
+        Educator expenses haircut
+    ALD_HSADeduction_hc: float
+        HSA deduction haircut
     ALD_KEOGH_SEP_hc: float
         KEOGH/etc. plan contribution deduction haircut
+    ALD_SelfEmp_HealthIns_hc: float
+        Self-employed h.i. deduction haircut
     ALD_EarlyWithdraw_hc: float
-        Penalty on early withdrawal deduction haricut
+        Penalty on early withdrawal deduction haircut
     ALD_AlimonyPaid_hc: float
         Alimony paid deduction haircut
-    ALD_AlimonyReceived_hc: float
-        Alimony received deduction haircut
-    ALD_EducatorExpenses_hc: float
-        Eductor expenses haircut
-    ALD_HSADeduction_hc: float
-        HSA Deduction haircut
     ALD_IRAContributions_hc: float
-        IRA Contribution haircut
-    ALD_DomesticProduction_hc: float
-        Domestic production haircut
+        IRA contribution haircut
+    ALD_StudentLoan_hc: float
+        Student loan interest deduction haircut
     ALD_Tuition_hc: float
         Tuition and fees haircut
+    ALD_DomesticProduction_hc: float
+        Domestic production haircut
+    ALD_AlimonyReceived_hc: float
+        Alimony received deduction haircut
 
     Returns
     -------
     c02900: float
         Total of all "above the line" income adjustments to get AGI
     """
-    # Form 2555 foreign earned income exclusion is assumed to be zero
-    # Form 1040 adjustments that are included in expanded income:
-    c02900 = ((1. - ALD_StudentLoan_hc) * e03210 +
-              c03260 +
-              (1. - ALD_EarlyWithdraw_hc) * e03400 +
-              (1. - ALD_AlimonyPaid_hc) * e03500 +
-              (1. - ALD_AlimonyReceived_hc) * e00800 +
-              (1. - ALD_EducatorExpenses_hc) * e03220 +
-              (1. - ALD_Tuition_hc) * e03230 +
-              (1. - ALD_DomesticProduction_hc) * e03240 +
-              (1. - ALD_HSADeduction_hc) * e03290 +
-              (1. - ALD_SelfEmp_HealthIns_hc) * e03270 +
-              (1. - ALD_IRAContributions_hc) * e03150 +
-              (1. - ALD_KEOGH_SEP_hc) * e03300 +
-              care_deduction)
-    # return results
+    # Form 2555 foreign earned income exclusion is assumed to be zero.
+    # Sch 1 line 12 (reservist/artist/fee-basis-gov-official biz expenses,
+    # Form 2106) and line 23 (Archer MSA) are not modeled.
+    c02900 = (                                       # 2025 ORDERING:
+        (1. - ALD_EducatorExpenses_hc) * e03220 +    # Sch 1 line 11
+        (1. - ALD_HSADeduction_hc) * e03290 +        # Sch 1 line 13
+        c03260 +                                     # Sch 1 line 15
+        (1. - ALD_KEOGH_SEP_hc) * e03300 +           # Sch 1 line 16
+        (1. - ALD_SelfEmp_HealthIns_hc) * e03270 +   # Sch 1 line 17
+        (1. - ALD_EarlyWithdraw_hc) * e03400 +       # Sch 1 line 18
+        (1. - ALD_AlimonyPaid_hc) * e03500 +         # Sch 1 line 19a
+        (1. - ALD_IRAContributions_hc) * e03150 +    # Sch 1 line 20
+        (1. - ALD_StudentLoan_hc) * e03210 +         # Sch 1 line 21
+        (1. - ALD_Tuition_hc) * e03230 +             # expired post-2017
+        (1. - ALD_DomesticProduction_hc) * e03240 +  # expired post-2017
+        (1. - ALD_AlimonyReceived_hc) * e00800 +     # reform construct
+        care_deduction                               # reform construct
+    )
     return c02900
 
 
@@ -471,134 +480,164 @@ def ALD_InvInc_ec_base(p22250, p23250,
 
 
 @iterate_jit(nopython=True)
-def CapGains(p23250, p22250, ALD_StudentLoan_hc,
-             ALD_InvInc_ec_rt, invinc_ec_base,
-             e00200, e00300, e00600, e00650, e00700, e00800,
-             CG_nodiff, CG_ec, CG_reinvest_ec_rt, Capital_loss_limitation,
-             ALD_BusinessLosses_c, MARS,
-             e00900, e01100, e01200, e01400, e01700, e02000, e02100,
-             e02300, e00400, e02400, c02900, e03210, e03230, e03240,
-             c01000, c23650, ymod, ymod1, invinc_agi_ec):
+def CapGainsLoss(p22250, p23250, Capital_loss_limitation, MARS,
+                 c23650, c01000):
     """
-    CapGains function: ...
+    Schedule D Part III netting of short-term and long-term capital
+    gains and losses, capped by the per-MARS net-capital-loss
+    deduction limit.
 
     Parameters
     ----------
-    p23250: float
-      Net long-term capital gains/losses (Schedule D)
     p22250: float
-      Net short-term capital gails/losses (Schedule D)
-    ALD_StudentLoan_hc: float
-      Student loan interest deduction haircut
-    ALD_InvInc_ec_rt: float
-      Investment income exclusion rate haircut
-    invinc_ec_base: float
-      Exclusion of investment income from AGI
-    e00200: float
-      Wages, salaries, tips/otime for filing unit net of pension contributions
-    e00300: float
-      Taxable interest income
-    e00600: float
-      Ordinary dividends included in AGI
-    e00650: float
-      Qualified dividends included in ordinary dividends
-    e00700: float
-      Taxable refunds of state and local income taxes
-    e00800: float
-      Alimony received
-    CG_nodiff: bool
-      Long term capital gains and qualified dividends taxed no
-      differently than regular taxable income
-    CG_ec: float
-      Dollar amount of all capital gains and qualified dividends that are
-      excluded from AGI
-    CG_reinvest_ec_rt: float
-      Fraction of all capital gains and qualified dividends in excess
-      of the dollar exclusion that are excluded from AGI
-    Capital_loss_limitation: float
-      Limitation on capital losses that are deductible
-    ALD_BusinessLosses_c: list
-      Maximm amount of business losses deductible
+      Net short-term capital gain/(loss) (Schedule D line 7)
+    p23250: float
+      Net long-term capital gain/(loss) (Schedule D line 15)
+    Capital_loss_limitation: list
+      MARS-indexed dollar limit on net capital loss deductible
+      against ordinary income (Schedule D line 21 cap)
     MARS: int
       Filing marital status (1=single, 2=joint, 3=separate,
                              4=household-head, 5=widow(er))
-    e00900: float
-      Schedule C business net profit/loss for filing unit
-    e01100: float
-      Capital gain distributions not reported on Schedule D
-    e01200: float
-      Other net gain/loss from Form 4797
-    e01400: float
-      Taxable IRA distributions
-    e01700: float
-      Taxable pensions and annunities
-    e02000: float
-      Schedule E total rental, royalty, partnership, S-corporation,
-      etc, income/loss (includes e26270 and e27200)
-    e02100: float
-      Farm net income/loss for filing unit from Schedule F
-    e02300: float
-      Unemployment insurance benefits
-    e00400: float
-      Tax-exempt interest income
-    e02400: float
-      Total social security (OASDI) benefits
-    c02900: float
-      Total of all "above the line" income adjustments to get AGI
-    e03210: float
-      Student loan interest
-    e03230: float
-      Tuition and fees from Form 8917
-    e03240: float
-      Domestic production activities from Form 8903
-    c01000: float
-      Limitation on capital losses
     c23650: float
-      Net capital gains (long and short term) before exclusion
-    ymod: float
-      Variable that is used in OASDI benefit taxation logic
-    ymod1: float
-      Variable that is included in AGI
-    invinc_agi_ec: float
-      Exclusion of investment income from AGI
+      Net capital gain/(loss) before loss limitation
+      (Schedule D line 16)
+    c01000: float
+      Net capital gain/(loss) after loss limitation
+      (Schedule D line 21 / Form 1040 line 7)
 
     Returns
     -------
-    c01000: float
-      Limitation on capital losses
     c23650: float
-      Net capital gains (long and short term) before exclusion
-    ymod: float
-      Variable that is used in OASDI benefit taxation logic
-    ymod1: float
-      Variable that is included in AGI
-    invinc_agi_ec: float
-      Exclusion of investment income from AGI
+      Net capital gain/(loss) before loss limitation
+    c01000: float
+      Net capital gain/(loss) after loss limitation
     """
-    # net capital gain (long term + short term) before exclusion
+    # Schedule D line 16: combine net short-term and net long-term
     c23650 = p23250 + p22250
-    # limitation on capital losses
+    # Schedule D line 21: cap any net loss at MARS-indexed limit
     c01000 = max((-1 * Capital_loss_limitation[MARS - 1]), c23650)
-    # compute total investment income
+    return (c23650, c01000)
+
+
+@iterate_jit(nopython=True)
+def AGIIncome(e00200, e00300, e00400, e00600, e00650, e00700, e00800,
+              e00900, e01100, e01200, e01400, e01700, e02000, e02100,
+              e02300, e02400, c01000, c02900, e03210, e03230, e03240,
+              ALD_StudentLoan_hc, ALD_InvInc_ec_rt, invinc_ec_base,
+              CG_nodiff, CG_ec, CG_reinvest_ec_rt,
+              ALD_BusinessLosses_c, MARS,
+              ymod, ymod1, invinc_agi_ec):
+    """
+    Builds ymod1 (Form 1040 income lines + Schedule 1 Part I, the
+    AGI building-block consumed by AGI()) and ymod (the modified-AGI
+    used by SSBenefits to determine the taxable portion of OASDI
+    benefits). Reform-only investment-income and QDCG exclusions
+    are applied here.
+
+    Parameters
+    ----------
+    e00200: float
+      Wages, salaries, tips (Form 1040 line 1)
+    e00300: float
+      Taxable interest (Form 1040 line 2b)
+    e00400: float
+      Tax-exempt interest (Form 1040 line 2a; not in AGI but used
+      in the SS-benefits modAGI)
+    e00600: float
+      Ordinary dividends (Form 1040 line 3b)
+    e00650: float
+      Qualified dividends (Form 1040 line 3a; subset of e00600)
+    e00700: float
+      Taxable refunds of state and local income taxes
+      (Schedule 1 line 1)
+    e00800: float
+      Alimony received (Schedule 1 line 2a)
+    e00900: float
+      Schedule C business net profit/(loss) (Schedule 1 line 3)
+    e01100: float
+      Capital gain distributions not reported on Schedule D
+    e01200: float
+      Other gain/(loss) from Form 4797 (Schedule 1 line 4)
+    e01400: float
+      Taxable IRA distributions (Form 1040 line 4b)
+    e01700: float
+      Taxable pensions and annuities (Form 1040 line 5b)
+    e02000: float
+      Schedule E rental, royalty, partnership, S-corp, etc.
+      income/(loss); includes e26270 and e27200 (Schedule 1 line 5)
+    e02100: float
+      Schedule F farm net income/(loss) (Schedule 1 line 6)
+    e02300: float
+      Unemployment compensation (Schedule 1 line 7)
+    e02400: float
+      Total social security (OASDI) benefits (Form 1040 line 6a)
+    c01000: float
+      Net capital gain/(loss) after loss limitation
+      (Form 1040 line 7); set by CapGainsLoss
+    c02900: float
+      Total above-the-line adjustments (Schedule 1 line 26)
+    e03210: float
+      Student loan interest deduction (pre-haircut)
+    e03230: float
+      Tuition and fees deduction (legacy)
+    e03240: float
+      Domestic production activities deduction (legacy)
+    ALD_StudentLoan_hc: float
+      Reform haircut on the student loan interest deduction
+    ALD_InvInc_ec_rt: float
+      Reform exclusion rate for investment income
+    invinc_ec_base: float
+      Base investment income subject to the reform exclusion
+      (set by ALD_InvInc_ec_base)
+    CG_nodiff: bool
+      Reform: long-term capital gains and qualified dividends taxed
+      at ordinary rates (no preferential treatment)
+    CG_ec: float
+      Reform: dollar amount of QDCG excluded from AGI when CG_nodiff
+    CG_reinvest_ec_rt: float
+      Reform: fraction of QDCG above CG_ec excluded from AGI when
+      CG_nodiff
+    ALD_BusinessLosses_c: list
+      Reform: MARS-indexed cap on combined Sch C + Sch E losses
+    MARS: int
+      Filing marital status
+    ymod: float
+      Modified-AGI used by SSBenefits to determine taxable portion
+      of OASDI benefits
+    ymod1: float
+      AGI build-up: Form 1040 income lines + Schedule 1 Part I,
+      net of reform investment-income and QDCG exclusions
+    invinc_agi_ec: float
+      Reform exclusion of investment income from AGI
+
+    Returns
+    -------
+    ymod: float
+    ymod1: float
+    invinc_agi_ec: float
+    """
+    # investment income (1040 lines 2b, 3b, 7 + Sch 1 line 4 + capgain distrib)
     invinc = e00300 + e00600 + c01000 + e01100 + e01200
-    # compute exclusion of investment income from AGI
+    # reform: exclude a fraction of investment income from AGI
     invinc_agi_ec = ALD_InvInc_ec_rt * max(0., invinc_ec_base)
-    # compute ymod1 variable that is included in AGI
+    # ymod1 = Form 1040 income lines + Schedule 1 Part I
     ymod1 = (e00200 + e00700 + e00800 + e01400 + e01700 +
              invinc - invinc_agi_ec + e02100 + e02300 +
              max(e00900 + e02000, -ALD_BusinessLosses_c[MARS - 1]))
     if CG_nodiff:
-        # apply QDIV+CG exclusion if QDIV+LTCG receive no special tax treatment
+        # reform: when QDCG receive no preferential rates, partially
+        # exclude (qualified dividends + net capital gain) from AGI
         qdcg_pos = max(0., e00650 + c01000)
         qdcg_exclusion = (min(CG_ec, qdcg_pos) +
                           CG_reinvest_ec_rt * max(0., qdcg_pos - CG_ec))
         ymod1 = max(0., ymod1 - qdcg_exclusion)
         invinc_agi_ec += qdcg_exclusion
-    # compute ymod variable that is used in OASDI benefit taxation logic
+    # ymod = modAGI used by the SS-benefits worksheet (Pub. 915)
     ymod2 = e00400 + (0.50 * e02400) - c02900
     ymod3 = (1. - ALD_StudentLoan_hc) * e03210 + e03230 + e03240
     ymod = ymod1 + ymod2 + ymod3
-    return (c01000, c23650, ymod, ymod1, invinc_agi_ec)
+    return (ymod, ymod1, invinc_agi_ec)
 
 
 @iterate_jit(nopython=True)
@@ -697,30 +736,42 @@ def AGI(ymod1, c02500, c02900, XTOT, MARS, DSI, exact, nu18, taxable_ubi,
         II_em, II_em_ps, II_em_po_step_size, II_em_prt, II_no_em_nu18,
         e02300, UI_thd, UI_em, c00100, pre_c04600, c04600):
     """
-    Computes Adjusted Gross Income (AGI), c00100, and
-    compute personal exemption amount, c04600.
+    Computes Adjusted Gross Income (c00100, Form 1040 line 11) and
+    the reform-only personal exemption amount (pre_c04600 and c04600;
+    no current-law form correspondence — TCJA repealed exemptions).
 
     Parameters
     ----------
+    -- AGI inputs (Form 1040 lines 9-11) --
     ymod1: float
-        Variable that is included in AGI
+        Form 1040 lines 1z+2b+3b+4b+5b+7a+8 (total income excluding
+        taxable Social Security benefits)
     c02500: float
-        Social security (OASDI) benefits included in AGI
+        Form 1040 line 6b: taxable Social Security (OASDI) benefits
     c02900: float
-        Total of all "above the line" income adjustments to get AGI
-    XTOT: int
-        Total number of exemptions for filing unit
+        Form 1040 line 10: total above-the-line adjustments
+        (Schedule 1, Part II, line 26)
+    taxable_ubi: float
+        Reform-only: amount of UBI that is added to AGI
+    -- UI exclusion inputs (reform parameter; 2020 ARPA-style) --
     MARS: int
         Filing marital status (1=single, 2=joint, 3=separate,
                                4=household-head, 5=widow(er))
+    e02300: float
+        Unemployment compensation
+    UI_thd: list
+        AGI threshold for unemployment compensation exclusion
+    UI_em: float
+        Amount of unemployment compensation excluded from AGI
+    -- Personal exemption inputs (reform / pre-TCJA only) --
+    XTOT: int
+        Total number of exemptions for filing unit
     DSI: int
         1 if claimed as dependent on another return; otherwise 0
     exact: int
         Whether or not to do rounding of phaseout fraction
     nu18: int
         Number of people in the tax unit under 18
-    taxable_ubi: float
-        Amount of UBI that is taxable (is added to AGI)
     II_em: float
         Personal and dependent exemption amount
     II_em_ps: list
@@ -731,49 +782,57 @@ def AGI(ymod1, c02500, c02900, XTOT, MARS, DSI, exact, nu18, taxable_ubi,
         Personal exemption phaseout rate
     II_no_em_nu18: float
         Repeal personal exemptions for dependents under age 18
-    e02300: float
-        Unemployment compensation
-    UI_thd: list
-        AGI threshold for unemployment compensation exclusion
-    UI_em: float
-        Amount of unemployment compensation excluded from AGI
+    -- Outputs (also accepted as inputs by iterate_jit) --
     c00100: float
-        Adjusted Gross Income (AGI)
+        Adjusted Gross Income (AGI), Form 1040 line 11
     pre_c04600: float
-        Personal exemption before phase-out
+        Personal exemption before phase-out (reform-only)
     c04600: float
-        Personal exemptions after phase-out
+        Personal exemptions after phase-out (reform-only)
 
     Returns
     -------
     c00100: float
-        Adjusted Gross Income (AGI)
+        Adjusted Gross Income (AGI), Form 1040 line 11
     pre_c04600: float
-        Personal exemption before phase-out
+        Personal exemption before phase-out (reform-only)
     c04600: float
-        Personal exemptions after phase-out
+        Personal exemptions after phase-out (reform-only)
     """
-    # calculate AGI assuming no foreign earned income exclusion
+    # ----------------------------------------------------------------
+    # Form 1040 line 11: Adjusted Gross Income
+    # ----------------------------------------------------------------
+    # line 9 (total income) - line 10 (Sch 1 line 26 adjustments)
+    # = line 11 (AGI); reform-only taxable_ubi is added in.
     c00100 = ymod1 + c02500 - c02900 + taxable_ubi
-    # calculate UI exclusion (e.g., from 2020 AGI due to ARPA)
+    # UI exclusion (2020 ARPA-style; reform parameters UI_em / UI_thd)
     if (c00100 - e02300) <= UI_thd[MARS - 1]:
         ui_excluded = min(e02300, UI_em)
     else:
         ui_excluded = 0.
     c00100 -= ui_excluded
-    # calculate personal exemption amount
+    # ----------------------------------------------------------------
+    # Personal exemption pre-phaseout (reform / pre-TCJA only;
+    # no line on the 2025 Form 1040)
+    # ----------------------------------------------------------------
+    # pre_c04600 = XTOT * II_em, with optional under-18-dep repeal
+    # (II_no_em_nu18) and dependent-filer override (DSI).
     if II_no_em_nu18:  # repeal of personal exemptions for deps. under 18
         pre_c04600 = max(0, XTOT - nu18) * II_em
     else:
         pre_c04600 = XTOT * II_em
     if DSI:
         pre_c04600 = 0.
-    # phase-out personal exemption amount
+    # ----------------------------------------------------------------
+    # Personal exemption phase-out (PEP)
+    # Pre-TCJA "Deduction for Exemptions Worksheet" (lines 5-7);
+    # reform-only.
+    # ----------------------------------------------------------------
     if exact == 1:  # exact calculation as on tax forms
-        line5 = max(0., c00100 - II_em_ps[MARS - 1])
-        line6 = math.ceil(line5 / II_em_po_step_size[MARS - 1])
-        line7 = II_em_prt * line6
-        c04600 = max(0., pre_c04600 * (1. - line7))
+        pep_line5 = max(0., c00100 - II_em_ps[MARS - 1])
+        pep_line6 = math.ceil(pep_line5 / II_em_po_step_size[MARS - 1])
+        pep_line7 = II_em_prt * pep_line6
+        c04600 = max(0., pre_c04600 * (1. - pep_line7))
     else:  # smoothed calculation needed for sensible mtr calculation
         dispc_numer = II_em_prt * (c00100 - II_em_ps[MARS - 1])
         dispc_denom = II_em_po_step_size[MARS - 1]
@@ -1483,7 +1542,7 @@ def SchXYZ(taxable_income, MARS,
            II_brk1, II_brk2, II_brk3, II_brk4, II_brk5,
            II_brk6, II_brk7):
     """
-    Taxes function returns tax amount given the progressive tax rate
+    Function that returns tax amount given the progressive tax rate
     schedule specified by the II_rt? and (upper) II_brk? parameters and
     given taxable income and filing status (MARS).
 
@@ -1530,14 +1589,14 @@ def SchXYZ(taxable_income, MARS,
     Regular individual income tax liability on all taxable income
     """
     # pylint: disable=too-many-return-statements
+    # IRS 2025 Tax Rate Schedules X (single), Y-1 (MFJ/QW), Y-2 (MFS),
+    # Z (HoH): MARS - 1 selects the schedule via II_brk?[MARS - 1].
     if taxable_income <= 0.:
         return 0.
-    tax = 0.
-    brk0 = 0.
     brk1 = II_brk1[MARS - 1]
     if taxable_income <= brk1:
-        return tax + II_rt1 * (taxable_income - brk0)
-    tax = tax + II_rt1 * (brk1 - brk0)
+        return II_rt1 * taxable_income
+    tax = II_rt1 * brk1
     brk2 = II_brk2[MARS - 1]
     if taxable_income <= brk2:
         return tax + II_rt2 * (taxable_income - brk1)
@@ -1571,59 +1630,10 @@ def SchXYZTax(c04800, MARS,
               II_brk1, II_brk2, II_brk3, II_brk4, II_brk5,
               II_brk6, II_brk7, c05200):
     """
-    SchXYZTax calls SchXYZ function and sets c05200 to returned amount.
-
-    Parameters
-    ----------
-    c04800: float
-        Regular taxable income
-    MARS: int
-        Filing (marital) status. (1=single, 2=joint, 3=separate,
-                                  4=household-head, 5=widow(er))
-    II_rt1: float
-        Personal income (regular/non-AMT) tax rate 1
-    II_rt2: float
-        Personal income (regular/non-AMT) tax rate 2
-    II_rt3: float
-        Personal income (regular/non-AMT) tax rate 3
-    II_rt4: float
-        Personal income (regular/non-AMT) tax rate 4
-    II_rt5: float
-        Personal income (regular/non-AMT) tax rate 5
-    II_rt6: float
-        Personal income (regular/non-AMT) tax rate 6
-    II_rt7: float
-        Personal income (regular/non-AMT) tax rate 7
-    II_rt8: float
-        Personal income (regular/non-AMT) tax rate 8
-    II_brk1: list
-        Personal income (regular/non-AMT)
-        tax bracket (upper threshold) 1
-    II_brk2: list
-        Personal income (regular/non-AMT)
-        tax bracket (upper threshold) 2
-    II_brk3: list
-        Personal income (regular/non-AMT)
-        tax bracket (upper threshold) 3
-    II_brk4: list
-        Personal income (regular/non-AMT)
-        tax bracket (upper threshold) 4
-    II_brk5: list
-        Personal income (regular/non-AMT)
-        tax bracket (upper threshold) 5
-    II_brk6: list
-        Personal income (regular/non-AMT)
-        tax bracket (upper threshold) 6
-    II_brk7: list
-        Personal income (regular/non-AMT)
-        tax bracket (upper threshold) 7
-    c05200: float
-        Tax amount from Schedule X,Y,Z tables
-
-    Returns
-    -------
-    c05200: float
-        Tax amount from Schedule X, Y, Z tables
+    Function that routes c04800 (regular taxable income) through the
+    SchXYZ rate-schedule function and stores the result in c05200 (tax
+    amount from Tax Rate Schedules X, Y-1, Y-2, Z). See the SchXYZ function
+    for the semantics of MARS, II_rt?, and II_brk?.
     """
     c05200 = SchXYZ(
         c04800, MARS,
@@ -1640,11 +1650,26 @@ def GainsTax(e00650, c01000, c23650, p23250, e01100, e58990,
              II_brk1, II_brk2, II_brk3, II_brk4, II_brk5, II_brk6, II_brk7,
              CG_nodiff,
              CG_rt1, CG_rt2, CG_rt3, CG_rt4, CG_brk1, CG_brk2, CG_brk3,
-             dwks10, dwks13, dwks14, dwks19, dwks43, c05700, taxbc):
+             dwks10, dwks13, dwks14, dwks18, dwks43, c05700, taxbc):
     """
-    GainsTax function implements (2015) Schedule D Tax Worksheet logic for
-    the special taxation of long-term capital gains and qualified dividends
-    if CG_nodiff is false.
+    Computes the regular-tax preference for long-term capital gains and
+    qualified dividends.  Implements both IRS worksheets in a single body:
+
+      * Qualified Dividends and Capital Gain Tax Worksheet (QDCGTW)
+        from the 2025 Form 1040 instructions; and
+      * Schedule D Tax Worksheet (Sch D TW) from the 2025 Schedule D
+        instructions, which is QDCGTW plus extra rate buckets for
+        un-recaptured section 1250 gain (25%) and collectibles 28%-rate
+        gain (lines 11-12 and 33-41).
+
+    Sch D TW reduces algebraically to QDCGTW when both e24515 and e24518
+    are zero, so the code runs the Sch D TW computation unconditionally
+    and lets the Sch D-only blocks vanish when not applicable.  Section
+    banners below mark which IRS-worksheet lines are common to both
+    worksheets and which belong to Sch D TW only.
+
+    If CG_nodiff is true, qualified dividends and long-term capital gains
+    are taxed at ordinary rates and the worksheet is skipped.
 
     Parameters
     ----------
@@ -1734,8 +1759,8 @@ def GainsTax(e00650, c01000, c23650, p23250, e01100, e58990,
         Difference of dwks10 - dwks12
     dwks14: float
         Maximum of 0 and dwks1 - dwks13
-    dwks19: float
-        Maximum of dwks17 and dwks16
+    dwks18: float
+        Maximum of dwks16 and dwks17
     dwks43: float
         separate tax on long-term capital gains and qualified dividends
     c05700: float
@@ -1751,8 +1776,8 @@ def GainsTax(e00650, c01000, c23650, p23250, e01100, e58990,
         Difference of dwks10 - dwks12
     dwks14: float
         Maximum of 0 and dwks1 - dwks13
-    dwks19: float
-        Maximum of dwks17 and dwks16
+    dwks18: float
+        Maximum of dwks16 and dwks17
     dwks43: float
         separate tax on long-term capital gains and qualified dividends
     c05700: float
@@ -1771,69 +1796,84 @@ def GainsTax(e00650, c01000, c23650, p23250, e01100, e58990,
 
     if hasqdivltcg == 1:
 
-        dwks1 = c04800
-        dwks2 = e00650
-        dwks3 = e58990
-        dwks4 = 0.  # always assumed to be zero
-        dwks5 = max(0., dwks3 - dwks4)
-        dwks6 = max(0., dwks2 - dwks5)
-        dwks7 = min(p23250, c23650)  # SchD lines 15 and 16, respectively
-        # dwks8 = min(dwks3, dwks4)
-        # dwks9 = max(0., dwks7 - dwks8)
-        # BELOW TWO STATEMENTS ARE UNCLEAR IN LIGHT OF dwks9=... COMMENT
+        # ---- Sch D TW lines 1-10 (common to QDCGTW) ----------------------
+        dwks1 = c04800                    # line 1: taxable income
+        dwks2 = e00650                    # line 2: qualified dividends
+        dwks3 = e58990                    # line 3: Form 4952 line 4g
+        dwks4 = 0.                        # line 4: Form 4952 line 4e (=0)
+        dwks5 = max(0., dwks3 - dwks4)    # line 5
+        dwks6 = max(0., dwks2 - dwks5)    # line 6
+        dwks7 = min(p23250, c23650)       # line 7: min(Sch D ln 15, ln 16)
+        # line 8: dwks8 = min(dwks3, dwks4) = 0 (since dwks4 = 0)
+        # line 9 (per IRS form): dwks9 = max(0, dwks7 - dwks8) = max(0, dwks7)
+        # The line-9 formula below deviates from the form to splice in
+        # e01100 (capital-gain distributions reported when no Sch D is
+        # filed) and to reduce dwks9 by negative e58990.  See BUG? note in
+        # CODE_REVIEW_2025.md row 17.
         if e01100 > 0.:
             c24510 = e01100
         else:
             c24510 = max(0., dwks7) + e01100
-        dwks9 = max(0., c24510 - min(0., e58990))
-        # ABOVE TWO STATEMENTS ARE UNCLEAR IN LIGHT OF dwks9=... COMMENT
-        dwks10 = dwks6 + dwks9
-        dwks11 = e24515 + e24518  # SchD lines 18 and 19, respectively
-        dwks12 = min(dwks9, dwks11)
-        dwks13 = dwks10 - dwks12
-        dwks14 = max(0., dwks1 - dwks13)
-        dwks16 = min(CG_brk1[MARS - 1], dwks1)
-        dwks17 = min(dwks14, dwks16)
-        dwks18 = max(0., dwks1 - dwks10)
-        dwks19 = max(dwks17, dwks18)
-        dwks20 = dwks16 - dwks17
-        lowest_rate_tax = CG_rt1 * dwks20
-        # break in worksheet lines
-        dwks21 = min(dwks1, dwks13)
-        dwks22 = dwks20
-        dwks23 = max(0., dwks21 - dwks22)
-        dwks25 = min(CG_brk2[MARS - 1], dwks1)
-        dwks26 = dwks19 + dwks20
-        dwks27 = max(0., dwks25 - dwks26)
-        dwks28 = min(dwks23, dwks27)
-        dwks29 = CG_rt2 * dwks28
-        dwks30 = dwks22 + dwks28
-        dwks31 = dwks21 - dwks30
-        dwks32 = CG_rt3 * dwks31
-        # compute total taxable CG for additional top bracket
-        cg_all = dwks20 + dwks28 + dwks31
+        dwks9 = max(0., c24510 - min(0., e58990))      # line 9
+        dwks10 = dwks6 + dwks9                         # line 10
+
+        # ---- Sch D TW lines 11-13 (Sch D TW only; vanish in QDCGTW) -----
+        dwks11 = e24515 + e24518          # line 11: Sch D ln 18 + ln 19
+        dwks12 = min(dwks9, dwks11)       # line 12
+        dwks13 = dwks10 - dwks12          # line 13
+
+        # ---- Sch D TW lines 14-19 (rate-bracket setup, common) ----------
+        dwks14 = max(0., dwks1 - dwks13)          # line 14
+        dwks15 = min(CG_brk1[MARS - 1], dwks1)    # line 15
+        dwks16 = min(dwks14, dwks15)              # line 16
+        dwks17 = max(0., dwks1 - dwks10)          # line 17
+        dwks18 = max(dwks16, dwks17)              # line 18
+        dwks19 = dwks15 - dwks16                  # line 19: amount @ 0%
+        lowest_rate_tax = CG_rt1 * dwks19         # line 20: 0% tax (=0)
+
+        # ---- Sch D TW lines 21-32 (15% and 20% rate buckets, common) ----
+        dwks21 = min(dwks1, dwks13)               # line 21
+        dwks22 = dwks19                           # line 22
+        dwks23 = max(0., dwks21 - dwks22)         # line 23
+        dwks25 = min(CG_brk2[MARS - 1], dwks1)    # line 25
+        dwks26 = dwks18 + dwks19                  # line 26
+        dwks27 = max(0., dwks25 - dwks26)         # line 27
+        dwks28 = min(dwks23, dwks27)              # line 28: amount @ 15%
+        dwks29 = CG_rt2 * dwks28                  # line 29: 15% tax
+        dwks30 = dwks22 + dwks28                  # line 30
+        dwks31 = dwks21 - dwks30                  # line 31: amount @ 20%
+        dwks32 = CG_rt3 * dwks31                  # line 32: 20% tax
+
+        # ---- Reform-only: 4th capital-gains bracket (not in IRS form) ---
+        # Tax-Calculator extension that levies (CG_rt4 - CG_rt3) on the
+        # portion of total taxed cap gains above CG_brk3.  Inactive under
+        # current law (CG_rt4 = CG_rt3).
+        cg_all = dwks19 + dwks28 + dwks31
         hi_base = max(0., cg_all - CG_brk3[MARS - 1])
         hi_incremental_rate = CG_rt4 - CG_rt3
         highest_rate_incremental_tax = hi_incremental_rate * hi_base
-        # break in worksheet lines
-        dwks33 = min(dwks9, e24515)
-        dwks34 = dwks10 + dwks19
-        dwks36 = max(0., dwks34 - dwks1)
-        dwks37 = max(0., dwks33 - dwks36)
-        dwks38 = 0.25 * dwks37
-        # break in worksheet lines
-        dwks39 = dwks19 + dwks20 + dwks28 + dwks31 + dwks37
-        dwks40 = dwks1 - dwks39
-        dwks41 = 0.28 * dwks40
-        dwks42 = SchXYZ(dwks19, MARS,
+
+        # ---- Sch D TW lines 33-41 (Sch D TW only: 25% and 28% rates) ----
+        # These blocks zero out when e24515 = e24518 = 0, recovering QDCGTW.
+        dwks33 = min(dwks9, e24515)           # line 33
+        dwks34 = dwks10 + dwks18              # line 34
+        dwks36 = max(0., dwks34 - dwks1)      # line 36 (line 35 omitted)
+        dwks37 = max(0., dwks33 - dwks36)     # line 37: amount @ 25%
+        dwks38 = 0.25 * dwks37                # line 38: 25% tax
+        dwks39 = dwks18 + dwks19 + dwks28 + dwks31 + dwks37   # line 39
+        dwks40 = dwks1 - dwks39               # line 40: amount @ 28%
+        dwks41 = 0.28 * dwks40                # line 41: 28% tax
+
+        # ---- Sch D TW lines 42-45 (final assembly, common) --------------
+        dwks42 = SchXYZ(dwks18, MARS,         # line 42: ordinary tax
                         II_rt1, II_rt2, II_rt3, II_rt4, II_rt5,
                         II_rt6, II_rt7, II_rt8,
                         II_brk1, II_brk2, II_brk3, II_brk4, II_brk5,
                         II_brk6, II_brk7)
         dwks43 = (dwks29 + dwks32 + dwks38 + dwks41 + dwks42 +
-                  lowest_rate_tax + highest_rate_incremental_tax)
-        dwks44 = c05200
-        dwks45 = min(dwks43, dwks44)
+                  lowest_rate_tax + highest_rate_incremental_tax)  # line 43
+        dwks44 = c05200                       # line 44: ordinary tax on line 1
+        dwks45 = min(dwks43, dwks44)          # line 45: smaller of 43, 44
         c24580 = dwks45
 
     else:  # if hasqdivltcg is zero
@@ -1842,14 +1882,14 @@ def GainsTax(e00650, c01000, c23650, p23250, e01100, e58990,
         dwks10 = max(0., min(p23250, c23650)) + e01100
         dwks13 = 0.
         dwks14 = 0.
-        dwks19 = 0.
+        dwks18 = 0.
         dwks43 = 0.
 
     # final calculations done no matter what the value of hasqdivltcg
     c05100 = c24580  # because foreign earned income exclusion is assumed zero
     c05700 = 0.  # no Form 4972, Lump Sum Distributions
     taxbc = c05700 + c05100
-    return (dwks10, dwks13, dwks14, dwks19, dwks43, c05700, taxbc)
+    return (dwks10, dwks13, dwks14, dwks18, dwks43, c05700, taxbc)
 
 
 @iterate_jit(nopython=True)
@@ -1889,7 +1929,7 @@ def AGIsurtax(c00100, MARS, AGI_surtax_trt, AGI_surtax_thd, taxbc, surtax):
 
 @iterate_jit(nopython=True)
 def AMT(e07300, dwks13, standard, f6251, c00100, c18300, taxbc,
-        c04470, c17000, c20800, c21040, e24515, MARS, dwks19,
+        c04470, c17000, c20800, c21040, e24515, MARS, dwks18,
         dwks14, c05700, e62900, e00700, dwks10, age_head, age_spouse,
         earned, cmbtp, qbided,
         AMT_child_em_c_age, AMT_brk1,
@@ -1934,8 +1974,8 @@ def AMT(e07300, dwks13, standard, f6251, c00100, c18300, taxbc,
     MARS: int
         Filing (marital) status. (1=single, 2=joint, 3=separate,
                                   4=household-head, 5=widow(er))
-    dwks19: float
-        Maximum of 0 and dwks1 - dwks13
+    dwks18: float
+        Maximum of dwks16 and dwks17
     dwks14: float
         Maximum of 0 and dwks1 - dwks13
     c05700: float
@@ -2032,7 +2072,7 @@ def AMT(e07300, dwks13, standard, f6251, c00100, c18300, taxbc,
     line30 = max(0., c62100 - line29)
     line3163 = (AMT_rt1 * line30 +
                 AMT_rt2_addon * max(0., (line30 - AMT_brk1[MARS - 1])))
-    if dwks10 > 0. or dwks13 > 0. or dwks14 > 0. or dwks19 > 0. or e24515 > 0.:
+    if dwks10 > 0. or dwks13 > 0. or dwks14 > 0. or dwks18 > 0. or e24515 > 0.:
         # complete Form 6251, Part III (line36 is equal to line30)
         line37 = dwks13
         line38 = e24515
@@ -2047,7 +2087,7 @@ def AMT(e07300, dwks13, standard, f6251, c00100, c18300, taxbc,
         line47 = min(line45, line46)  # line47 is amount taxed at AMT_CG_rt1
         cgtax1 = line47 * AMT_CG_rt1
         line48 = line46 - line47
-        line51 = dwks19
+        line51 = dwks18
         line52 = line45 + line51
         line53 = max(0., AMT_CG_brk2[MARS - 1] - line52)
         line54 = min(line48, line53)  # line54 is amount taxed at AMT_CG_rt2
@@ -2478,9 +2518,9 @@ def ChildDepTaxCredit(age_head, age_spouse, nu18, n24, MARS, c00100, XTOT, num,
                       CTC_is_refundable, CTC_include17,
                       c07220, odc, codtc_limited):
     """
-    Computes amounts on "Child Tax Credit and Credit for Other Dependents
-    Worksheet" in 2018 Publication 972, which pertain to these two
-    nonrefundable tax credits.
+    Computes nonrefundable Child Tax Credit and Credit for Other Dependents
+    on Schedule 8812 Part I (and Credit Limit Worksheet A).
+    https://www.irs.gov/pub/irs-pdf/f1040s8.pdf
 
     Parameters
     ----------
@@ -2535,7 +2575,8 @@ def ChildDepTaxCredit(age_head, age_spouse, nu18, n24, MARS, c00100, XTOT, num,
     odc: float
         Other Dependent Credit
     codtc_limited: float
-        Maximum of 0 and line 10 minus line 16
+        Tentative credit not yet absorbed by tax liability (Sch 8812 line 12
+        minus the nonrefundable amount); used by AdditionalCTC.
 
     Returns
     -------
@@ -2544,51 +2585,55 @@ def ChildDepTaxCredit(age_head, age_spouse, nu18, n24, MARS, c00100, XTOT, num,
     odc: float
         Other Dependent Credit
     codtc_limited: float
-        Maximum of 0 and line 10 minus line 16
+        Tentative credit not yet absorbed by tax liability (Sch 8812 line 12
+        minus the nonrefundable amount); used by AdditionalCTC.
     """
-    # Worksheet Part 1
+    # Sch 8812 lines 1-3: modified AGI (no foreign earned income exclusion)
+    modAGI = c00100
+    # reform-only: redefine "qualifying child" as under 18 instead of under 17
     if CTC_include17:
         tu18 = int(age_head < 18)   # taxpayer is under age 18
         su18 = int(MARS == 2 and age_spouse < 18)  # spouse is under age 18
         childnum = n24 + max(0, nu18 - tu18 - su18 - n24)
     else:
         childnum = n24
-    line1 = CTC_c * childnum + CTC_c_under6_bonus * nu06
-    line2 = ODC_c * max(0, XTOT - childnum - num)
-    line3 = line1 + line2
-    modAGI = c00100  # no foreign earned income exclusion to add to AGI (line6)
-    if line3 > 0. and modAGI > CTC_ps[MARS - 1]:
+    # Sch 8812 lines 4-5: tentative CTC (plus reform under-6 bonus)
+    line5 = CTC_c * childnum + CTC_c_under6_bonus * nu06
+    # Sch 8812 lines 6-7: tentative ODC
+    line7 = ODC_c * max(0, XTOT - childnum - num)
+    # Sch 8812 line 8: sum of tentative CTC and ODC
+    line8 = line5 + line7
+    # Sch 8812 lines 9-12: phase out using CTC_ps threshold and CTC_prt rate
+    if line8 > 0. and modAGI > CTC_ps[MARS - 1]:
         excess = modAGI - CTC_ps[MARS - 1]
         if exact == 1:  # exact calculation as on tax forms
             excess = 1000. * math.ceil(excess / 1000.)
-        line10 = max(0., line3 - CTC_prt * excess)
+        line12 = max(0., line8 - CTC_prt * excess)
     else:
-        line10 = line3
-    if line10 > 0.:
-        # Worksheet Part 2
-        line11 = c05800
-        line12 = (e07260 * (1. - CR_ResidentialEnergy_hc) +
-                  e07300 * (1. - CR_ForeignTax_hc) +
-                  c07180 +  # child & dependent care expense credit
-                  c07230 +  # education credit
-                  e07240 * (1. - CR_RetirementSavings_hc) +
-                  c07200)  # Schedule R credit
-        line13 = line11 - line12
-        line14 = 0.
-        line15 = max(0., line13 - line14)
-        if CTC_is_refundable:
-            c07220 = line10 * line1 / line3
-            odc = max(0., line10 - c07220)
-            codtc_limited = max(0., line10 - c07220 - odc)
+        line12 = line8
+    if line12 > 0.:
+        # Credit Limit Worksheet A: cap by c05800 minus other nonrefundable
+        # credits already used (Sch 3 lines 1, 2, 3, 4, 5a, 6d)
+        clwA_other = (e07300 * (1. - CR_ForeignTax_hc) +         # foreign tax
+                      c07180 +                                   # CDCC
+                      c07230 +                                   # education
+                      e07240 * (1. - CR_RetirementSavings_hc) +  # ret savings
+                      e07260 * (1. - CR_ResidentialEnergy_hc) +  # res energy
+                      c07200)                                    # Schedule R
+        clwA_limit = max(0., c05800 - clwA_other)
+        if CTC_is_refundable:  # reform-only: skip tax-liability cap
+            c07220 = line12 * line5 / line8
+            odc = max(0., line12 - c07220)
+            codtc_limited = max(0., line12 - c07220 - odc)
         else:
-            line16 = min(line10, line15)  # credit is capped by tax liability
-            # separate the CTC and ODTC amounts
-            c07220 = line16 * line1 / line3
-            odc = max(0., line16 - c07220)
-            # compute codtc_limited for use in AdditionalCTC function
-            codtc_limited = max(0., line10 - line16)
+            # Sch 8812 line 14: smaller of line 12 or Credit Limit Worksheet A
+            line14 = min(line12, clwA_limit)
+            # split line 14 into CTC portion and ODC portion
+            c07220 = line14 * line5 / line8
+            odc = max(0., line14 - c07220)
+            # tentative credit not absorbed by tax — passed to AdditionalCTC
+            codtc_limited = max(0., line12 - line14)
     else:
-        line16 = 0.
         c07220 = 0.
         odc = 0.
         codtc_limited = 0.
@@ -3139,14 +3184,15 @@ def AdditionalCTC(actc_claim_thd, codtc_limited,
                   c11070):
     """
     Calculates refundable Additional Child Tax Credit (ACTC), c11070,
-    following 2018 Form 8812 logic.
+    following Schedule 8812 Part II (Parts II-A, II-B, II-C).
 
     Parameters
     ----------
     actc_claim_thd: float
         ACTC amount below which ACTC is unclaimed
     codtc_limited: float
-        Maximum of 0 and line 10 minus line 16
+        Sch 8812 line 16a: Part I tentative credit minus the nonrefundable
+        portion absorbed (line 12 minus line 14); set in ChildDepTaxCredit
     ACTC_c: float
         Maximum refundable additional child tax credit
     n24: int
@@ -3162,7 +3208,7 @@ def AdditionalCTC(actc_claim_thd, codtc_limited,
         Number of dependents under 6 years old
     ACTC_rt_bonus_under6family: float
         Bonus additional child tax credit rate for families with qualifying
-        children under 6
+        children under 6 (reform-only; no form correspondence)
     ACTC_ChildNum: float
         Additional Child Tax Credit minimum number of qualified children for
         different formula
@@ -3184,43 +3230,57 @@ def AdditionalCTC(actc_claim_thd, codtc_limited,
     c11070: float
         Child tax credit (refunded) from Form 8812
     """
-    # Part I
-    line3 = codtc_limited
-
-    if CTC_is_refundable:
-        line4 = 0.
+    # Sch 8812 line 16a: leftover Part I tentative credit
+    line16a = codtc_limited
+    # Sch 8812 line 16b: max refundable amount = ACTC_c per qualifying child
+    if CTC_is_refundable:  # reform-only: refundable portion handled in Part I
+        line16b = 0.
     else:
+        # reform-only: redefine "qualifying child" as under 18 instead
+        #              of under 17
         if CTC_include17:
             tu18 = int(age_head < 18)   # taxpayer is under age 18
             su18 = int(MARS == 2 and age_spouse < 18)  # spouse is under age 18
             childnum = n24 + max(0, nu18 - tu18 - su18 - n24)
         else:
             childnum = n24
-        line4 = min(ACTC_c, CTC_c) * childnum
-    c11070 = 0.  # line15
-    if line3 > 0. and line4 > 0.:
-        line5 = min(line3, line4)
-        line7 = max(0., earned - ACTC_Income_thd)
-        # accommodate ACTC rate bonus for families with children under 5
+        line16b = min(ACTC_c, CTC_c) * childnum
+    c11070 = 0.  # default if no refundable amount
+    if line16a > 0. and line16b > 0.:
+        # Sch 8812 line 17: smaller of line 16a or line 16b
+        line17 = min(line16a, line16b)
+        # Part II-A
+        # Sch 8812 line 18a / line 20: earned income excess over threshold
+        earned_excess = max(0., earned - ACTC_Income_thd)
+        # reform-only: ACTC rate bonus for families with children under 6
         if nu06 == 0:
             ACTC_rate = ACTC_rt
         else:
             ACTC_rate = ACTC_rt + ACTC_rt_bonus_under6family
-        line8 = ACTC_rate * line7
+        # Sch 8812 line 20: ACTC_rt times earned-income excess
+        line20 = ACTC_rate * earned_excess
         if childnum < ACTC_ChildNum:
-            if line8 > 0.:
-                c11070 = min(line5, line8)
-        else:  # if childnum >= ACTC_ChildNum
-            if line8 >= line5:
-                c11070 = line5
-            else:  # complete Part II
-                line9 = 0.5 * ptax_was
-                line10 = c03260 + e09800
-                line11 = line9 + line10
-                line12 = c59660 + e11200
-                line13 = max(0., line11 - line12)
-                line14 = max(line8, line13)
-                c11070 = min(line5, line14)
+            # Sch 8812 line 27 (Part II-C): smaller of line 17 or line 20
+            if line20 > 0.:
+                c11070 = min(line17, line20)
+        else:  # childnum >= ACTC_ChildNum: consider Part II-B alternative
+            if line20 >= line17:
+                c11070 = line17
+            else:  # Part II-B
+                # Sch 8812 line 22: SS+Medicare+Add'l Medicare withheld
+                line22 = 0.5 * ptax_was
+                # Sch 8812 line 23: deductible SE tax + unreported FICA
+                line23 = c03260 + e09800
+                # Sch 8812 line 24: sum of lines 22 and 23
+                line24 = line22 + line23
+                # Sch 8812 line 25: EITC + excess SS/RRTA withheld
+                line25 = c59660 + e11200
+                # Sch 8812 line 26: line 24 minus line 25 (not less than 0)
+                line26 = max(0., line24 - line25)
+                # Sch 8812 line 27 (Part II-b3157
+                #   min(line 17, max(line 20, line 26))
+                line27 = max(line20, line26)
+                c11070 = min(line17, line27)
 
     # approximate ACTC claiming behavior
     if c11070 < actc_claim_thd:
