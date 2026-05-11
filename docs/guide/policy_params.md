@@ -448,9 +448,9 @@ _Valid Range:_ min = 0 and max = 1
 _Out-of-Range Action:_ error
 
 
-####  `ALD_AlimonyReceived_hc`
-_Description:_ Under pre-TCJA law, none of alimony received is taken as an adjustment from gross income in arriving at AGI. This haircut can be used to change the deduction allowed.
-_Notes:_ The final adjustment amount would be (1-Haircut)*AlimonyReceived.
+####  `AlimonyReceived_frac_in_AGI`
+_Description:_ Fraction of alimony received (input variable e00800) that is included in AGI as Schedule 1 Part I line 2a income. Under pre-TCJA law, recipients had to include alimony as taxable income (value 1.0). TCJA excluded alimony received from income for divorce or separation agreements executed after 2018-12-31 (value 0.0).
+_Notes:_ The amount of alimony added to AGI equals AlimonyReceived_frac_in_AGI * AlimonyReceived.
 _Has An Effect When Using:_ _PUF data:_ True _CPS data:_ True
 _Can Be Inflation Indexed:_ False _Is Inflation Indexed:_ False
 _Value Type:_ float
@@ -554,7 +554,7 @@ _Out-of-Range Action:_ error
 
 ####  `ALD_Tuition_hc`
 _Description:_ If greater than zero, this decimal fraction reduces the portion of tuition and fees that can be deducted from AGI.
-_Notes:_ The final adjustment amount would be (1-Haircut)*TuitionFees.
+_Notes:_ The final adjustment amount would be (1-Haircut)*TuitionFees.  Set to 1.0 starting 2021: IRC §222 was permanently repealed for tax years beginning after 2020-12-31 by §104 of the Taxpayer Certainty and Disaster Tax Relief Act of 2020.
 _Has An Effect When Using:_ _PUF data:_ True _CPS data:_ False
 _Can Be Inflation Indexed:_ False _Is Inflation Indexed:_ False
 _Value Type:_ float
@@ -564,8 +564,10 @@ _Known Values:_
 2015: 0.0
 2016: 0.0
 2017: 0.0
-2018: 1.0
-2019: 1.0
+2018: 0.0
+2019: 0.0
+2020: 0.0
+2021: 1.0
 _Valid Range:_ min = 0 and max = 1
 _Out-of-Range Action:_ error
 
@@ -3989,6 +3991,30 @@ _Known Values:_
 2017: 1050.0
 2018: 1050.0
 2019: 1100.0
+_Valid Range:_ min = 0 and max = 9e+99
+_Out-of-Range Action:_ error
+
+
+####  `STD_Dep_earned_add`
+_Description:_ In the IRS Standard Deduction Worksheet for Dependents (Form 1040 instructions), this is the amount added to earned income (worksheet line 2) before comparing against the minimum dependent standard deduction (STD_Dep). Indexed for inflation per IRC §63(c)(5)(B).
+_Has An Effect When Using:_ _PUF data:_ True _CPS data:_ True
+_Can Be Inflation Indexed:_ True _Is Inflation Indexed:_ True
+_Value Type:_ float
+_Known Values:_
+2013: 350.0
+2014: 350.0
+2015: 350.0
+2016: 350.0
+2017: 350.0
+2018: 350.0
+2019: 350.0
+2020: 350.0
+2021: 350.0
+2022: 400.0
+2023: 400.0
+2024: 450.0
+2025: 450.0
+2026: 450.0
 _Valid Range:_ min = 0 and max = 9e+99
 _Out-of-Range Action:_ error
 

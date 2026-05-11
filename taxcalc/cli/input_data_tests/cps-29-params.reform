@@ -21,7 +21,7 @@
 2029 ALD_KEOGH_SEP_hc 0.0
 2029 ALD_EarlyWithdraw_hc 0.0
 2029 ALD_AlimonyPaid_hc 1.0
-2029 ALD_AlimonyReceived_hc 0.0
+2029 AlimonyReceived_frac_in_AGI 0.0
 2029 ALD_EducatorExpenses_hc 0.0
 2029 ALD_HSADeduction_hc 0.0
 2029 ALD_IRAContributions_hc 0.0
@@ -40,6 +40,7 @@
 2029 II_no_em_nu18 False
 2029 STD [17395.38 34790.75 17395.38 26093.07 34790.75]
 2029 STD_Dep 1458.62
+2029 STD_Dep_earned_add 486.22
 2029 STD_Aged [2214.94 1782.76 1782.76 2214.94 1782.76]
 2029 STD_allow_charity_ded_nonitemizers True
 2029 STD_charity_ded_nonitemizers_max [1000. 2000. 1000. 1000. 1000.]

@@ -21,7 +21,7 @@
 2026 ALD_KEOGH_SEP_hc 0.0
 2026 ALD_EarlyWithdraw_hc 0.0
 2026 ALD_AlimonyPaid_hc 1.0
-2026 ALD_AlimonyReceived_hc 0.0
+2026 AlimonyReceived_frac_in_AGI 0.0
 2026 ALD_EducatorExpenses_hc 0.0
 2026 ALD_HSADeduction_hc 0.0
 2026 ALD_IRAContributions_hc 0.0
@@ -40,6 +40,7 @@
 2026 II_no_em_nu18 False
 2026 STD [16100. 32200. 16100. 24150. 32200.]
 2026 STD_Dep 1350.0
+2026 STD_Dep_earned_add 450.0
 2026 STD_Aged [2050. 1650. 1650. 2050. 1650.]
 2026 STD_allow_charity_ded_nonitemizers True
 2026 STD_charity_ded_nonitemizers_max [1000. 2000. 1000. 1000. 1000.]

@@ -809,9 +809,9 @@
             "cps": false
         }
     },
-    "ALD_AlimonyReceived_hc": {
-        "title": "Adjustment for alimony-received haircut",
-        "description": "Under pre-TCJA law, none of alimony received is taken as an adjustment from gross income in arriving at AGI. This haircut can be used to change the deduction allowed.  The final adjustment amount would be (1-Haircut)*AlimonyReceived.",
+    "AlimonyReceived_frac_in_AGI": {
+        "title": "Fraction of alimony received that is included in AGI",
+        "description": "Fraction of alimony received (input variable e00800) that is included in AGI as Schedule 1 Part I line 2a income. Under pre-TCJA law, recipients had to include alimony as taxable income (value 1.0). TCJA excluded alimony received from income for divorce or separation agreements executed after 2018-12-31 (value 0.0). The amount of alimony added to AGI equals AlimonyReceived_frac_in_AGI * AlimonyReceived.",
         "section_1": "Above The Line Deductions",
         "section_2": "Misc. Adjustment Haircuts",
         "indexable": false,
@@ -996,7 +996,7 @@
     },
     "ALD_Tuition_hc": {
         "title": "Deduction for tuition and fees haircut",
-        "description": "If greater than zero, this decimal fraction reduces the portion of tuition and fees that can be deducted from AGI.  The final adjustment amount would be (1-Haircut)*TuitionFees.",
+        "description": "If greater than zero, this decimal fraction reduces the portion of tuition and fees that can be deducted from AGI.  The final adjustment amount would be (1-Haircut)*TuitionFees.  Set to 1.0 starting 2021: IRC §222 was permanently repealed for tax years beginning after 2020-12-31 by §104 of the Taxpayer Certainty and Disaster Tax Relief Act of 2020.",
         "section_1": "Above The Line Deductions",
         "section_2": "Misc. Adjustment Haircuts",
         "indexable": false,
@@ -1024,7 +1024,7 @@
                 "value": 0.0
             },
             {
-                "year": 2018,
+                "year": 2021,
                 "value": 1.0
             }
         ],
@@ -2639,6 +2639,83 @@
             {
                 "year": 2026,
                 "value": 1350.0
+            }
+        ],
+        "validators": {
+            "range": {
+                "min": 0,
+                "max": 9e+99
+            }
+        },
+        "compatible_data": {
+            "puf": true,
+            "cps": true
+        }
+    },
+    "STD_Dep_earned_add": {
+        "title": "Earned-income additional amount in dependent standard deduction",
+        "description": "In the IRS Standard Deduction Worksheet for Dependents (Form 1040 instructions), this is the amount added to earned income (worksheet line 2) before comparing against the minimum dependent standard deduction (STD_Dep). Indexed for inflation per IRC §63(c)(5)(B).",
+        "section_1": "",
+        "section_2": "",
+        "indexable": true,
+        "indexed": true,
+        "type": "float",
+        "value": [
+            {
+                "year": 2013,
+                "value": 350.0
+            },
+            {
+                "year": 2014,
+                "value": 350.0
+            },
+            {
+                "year": 2015,
+                "value": 350.0
+            },
+            {
+                "year": 2016,
+                "value": 350.0
+            },
+            {
+                "year": 2017,
+                "value": 350.0
+            },
+            {
+                "year": 2018,
+                "value": 350.0
+            },
+            {
+                "year": 2019,
+                "value": 350.0
+            },
+            {
+                "year": 2020,
+                "value": 350.0
+            },
+            {
+                "year": 2021,
+                "value": 350.0
+            },
+            {
+                "year": 2022,
+                "value": 400.0
+            },
+            {
+                "year": 2023,
+                "value": 400.0
+            },
+            {
+                "year": 2024,
+                "value": 450.0
+            },
+            {
+                "year": 2025,
+                "value": 450.0
+            },
+            {
+                "year": 2026,
+                "value": 450.0
             }
         ],
         "validators": {

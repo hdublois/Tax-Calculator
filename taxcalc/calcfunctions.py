@@ -22,8 +22,19 @@ from taxcalc.decorators import iterate_jit, JIT
 
 def BenefitPrograms(calc):
     """
-    Calculate total government cost and consumption value of benefits
-    delivered by non-repealed benefit programs.
+    Aggregate per-record government cost and consumption value of the
+    non-tax benefit programs tracked by Tax-Calculator and write them
+    to the Records arrays `benefit_cost_total` and `benefit_value_total`.
+
+    This function does not implement any IRS form; it is a model-internal
+    aggregator. For each program a `BEN_*_repeal` policy parameter, when
+    set, zeroes the program's per-record array before the sums are
+    formed (UBI has no repeal flag because UBI is itself a reform
+    construct that is zero under current law). In-kind programs are
+    weighted by a `BEN_*_value` consumption parameter; cash programs
+    (SSI, OASDI = e02400, UI = e02300, UBI) are valued at full dollar
+    cost. `benefit_value_total` is consumed downstream by ExpandIncome
+    via `expanded_income`.
 
     Parameters
     ----------
@@ -35,61 +46,38 @@ def BenefitPrograms(calc):
     None:
         The function modifies calc
     """
+    # programs aggregated below, in a fixed order:
+    #   (record_array_name, repeal_param_or_None, value_param_or_None)
+    # repeal_param=None ==> program has no repeal flag (UBI only).
+    # value_param=None  ==> cash benefit, valued at full dollar cost.
+    programs = (
+        ('housing_ben', 'BEN_housing_repeal', 'BEN_housing_value'),
+        ('ssi_ben', 'BEN_ssi_repeal', None),
+        ('snap_ben', 'BEN_snap_repeal', 'BEN_snap_value'),
+        ('tanf_ben', 'BEN_tanf_repeal', 'BEN_tanf_value'),
+        ('vet_ben', 'BEN_vet_repeal', 'BEN_vet_value'),
+        ('wic_ben', 'BEN_wic_repeal', 'BEN_wic_value'),
+        ('mcare_ben', 'BEN_mcare_repeal', 'BEN_mcare_value'),
+        ('mcaid_ben', 'BEN_mcaid_repeal', 'BEN_mcaid_value'),
+        ('e02400', 'BEN_oasdi_repeal', None),  # OASDI Social Security
+        ('e02300', 'BEN_ui_repeal', None),  # Unemployment Insurance
+        ('ubi', None, None),  # UBI reform construct
+        ('other_ben', 'BEN_other_repeal', 'BEN_other_value'),
+    )
     # zero out benefits delivered by repealed programs
     zero = np.zeros(calc.array_len)
-    if calc.policy_param('BEN_housing_repeal'):
-        calc.array('housing_ben', zero)
-    if calc.policy_param('BEN_ssi_repeal'):
-        calc.array('ssi_ben', zero)
-    if calc.policy_param('BEN_snap_repeal'):
-        calc.array('snap_ben', zero)
-    if calc.policy_param('BEN_tanf_repeal'):
-        calc.array('tanf_ben', zero)
-    if calc.policy_param('BEN_vet_repeal'):
-        calc.array('vet_ben', zero)
-    if calc.policy_param('BEN_wic_repeal'):
-        calc.array('wic_ben', zero)
-    if calc.policy_param('BEN_mcare_repeal'):
-        calc.array('mcare_ben', zero)
-    if calc.policy_param('BEN_mcaid_repeal'):
-        calc.array('mcaid_ben', zero)
-    if calc.policy_param('BEN_oasdi_repeal'):
-        calc.array('e02400', zero)
-    if calc.policy_param('BEN_ui_repeal'):
-        calc.array('e02300', zero)
-    if calc.policy_param('BEN_other_repeal'):
-        calc.array('other_ben', zero)
+    for name, repeal_param, _ in programs:
+        if repeal_param is not None and calc.policy_param(repeal_param):
+            calc.array(name, zero)
     # calculate government cost of all benefits
-    cost = np.array(
-        calc.array('housing_ben') +
-        calc.array('ssi_ben') +
-        calc.array('snap_ben') +
-        calc.array('tanf_ben') +
-        calc.array('vet_ben') +
-        calc.array('wic_ben') +
-        calc.array('mcare_ben') +
-        calc.array('mcaid_ben') +
-        calc.array('e02400') +
-        calc.array('e02300') +
-        calc.array('ubi') +
-        calc.array('other_ben')
-    )
+    cost = sum(calc.array(name) for name, _, _ in programs)
     calc.array('benefit_cost_total', cost)
     # calculate consumption value of all benefits
-    # (assuming that cash benefits have full value)
-    value = np.array(
-        calc.array('housing_ben') * calc.consump_param('BEN_housing_value') +
-        calc.array('ssi_ben') +
-        calc.array('snap_ben') * calc.consump_param('BEN_snap_value') +
-        calc.array('tanf_ben') * calc.consump_param('BEN_tanf_value') +
-        calc.array('vet_ben') * calc.consump_param('BEN_vet_value') +
-        calc.array('wic_ben') * calc.consump_param('BEN_wic_value') +
-        calc.array('mcare_ben') * calc.consump_param('BEN_mcare_value') +
-        calc.array('mcaid_ben') * calc.consump_param('BEN_mcaid_value') +
-        calc.array('e02400') +
-        calc.array('e02300') +
-        calc.array('ubi') +
-        calc.array('other_ben') * calc.consump_param('BEN_other_value')
+    # (cash benefits are valued at full dollar cost)
+    value = sum(
+        calc.array(name) if vparam is None
+        else calc.array(name) * calc.consump_param(vparam)
+        for name, _, vparam in programs
     )
     calc.array('benefit_value_total', value)
 
@@ -211,11 +199,16 @@ def EI_PayrollTax(SS_Earnings_c, e00200p, e00200s, pencon_p, pencon_s,
     was_plus_sey_s: float
         Wage and salary income plus taxable self employment income for spouse
     """
+    # combined OASDI and HI FICA rates (employer + employee shares)
+    ss_rate = FICA_ss_trt_employer + FICA_ss_trt_employee
+    mc_rate = FICA_mc_trt_employer + FICA_mc_trt_employee
+
     # compute sey and its individual components
     sey_p = e00900p + e02100p + k1bx14p
     sey_s = e00900s + e02100s + k1bx14s
     sey = sey_p + sey_s  # total self-employment income for filing unit
 
+    # ---------- FICA on wages and salaries ----------
     # compute gross wage and salary income ('was' denotes 'wage and salary')
     gross_ws_p = e00200p + pencon_p
     gross_ws_s = e00200s + pencon_s
@@ -224,66 +217,54 @@ def EI_PayrollTax(SS_Earnings_c, e00200p, e00200s, pencon_p, pencon_s,
     txearn_was_p = min(SS_Earnings_c, gross_ws_p)
     txearn_was_s = min(SS_Earnings_c, gross_ws_s)
 
-    # compute OASDI and HI payroll taxes on wage-and-salary income, FICA
-    ptax_ss_ws_p = (FICA_ss_trt_employer + FICA_ss_trt_employee) * txearn_was_p
-    ptax_ss_ws_s = (FICA_ss_trt_employer + FICA_ss_trt_employee) * txearn_was_s
-    ptax_mc_ws_p = (FICA_mc_trt_employer + FICA_mc_trt_employee) * gross_ws_p
-    ptax_mc_ws_s = (FICA_mc_trt_employer + FICA_mc_trt_employee) * gross_ws_s
+    # compute OASDI and HI payroll taxes on wage-and-salary income
+    ptax_ss_ws_p = ss_rate * txearn_was_p
+    ptax_ss_ws_s = ss_rate * txearn_was_s
+    ptax_mc_ws_p = mc_rate * gross_ws_p
+    ptax_mc_ws_s = mc_rate * gross_ws_s
     ptax_was = ptax_ss_ws_p + ptax_ss_ws_s + ptax_mc_ws_p + ptax_mc_ws_s
 
-    # compute taxable self-employment income for OASDI SECA
-    sey_frac = (
-        1.0 - 0.5 *
-        (FICA_ss_trt_employer + FICA_ss_trt_employee +
-         FICA_mc_trt_employer + FICA_mc_trt_employee)
-    )
-    txearn_sey_p = min(max(0., sey_p * sey_frac), SS_Earnings_c - txearn_was_p)
-    txearn_sey_s = min(max(0., sey_s * sey_frac), SS_Earnings_c - txearn_was_s)
-
-    # compute self-employment tax on taxable self-employment income, SECA
-    setax_ss_p = (FICA_ss_trt_employer + FICA_ss_trt_employee) * txearn_sey_p
-    setax_ss_s = (FICA_ss_trt_employer + FICA_ss_trt_employee) * txearn_sey_s
-    setax_mc_p = (
-        (FICA_mc_trt_employer + FICA_mc_trt_employee) *
-        max(0., sey_p * sey_frac)
-    )
-    setax_mc_s = (
-        (FICA_mc_trt_employer + FICA_mc_trt_employee) *
-        max(0., sey_s * sey_frac)
-    )
+    # ---------- SECA on self-employment income (Sch SE Part I) ----------
+    # Sch SE line 4a multiplier 0.9235, generalized to current FICA rates
+    seca_frac = 1.0 - 0.5 * (ss_rate + mc_rate)
+    # Sch SE line 4c (taxable net SE earnings, per spouse)
+    net_sey_p = max(0., sey_p * seca_frac)
+    net_sey_s = max(0., sey_s * seca_frac)
+    # Sch SE line 9: remaining OASDI base = SS_Earnings_c - W-2 SS wages
+    txearn_sey_p = min(net_sey_p, SS_Earnings_c - txearn_was_p)
+    txearn_sey_s = min(net_sey_s, SS_Earnings_c - txearn_was_s)
+    # Sch SE line 10 (OASDI portion) and line 11 (HI portion), per spouse
+    setax_ss_p = ss_rate * txearn_sey_p
+    setax_ss_s = ss_rate * txearn_sey_s
+    setax_mc_p = mc_rate * net_sey_p
+    setax_mc_s = mc_rate * net_sey_s
     setax_p = setax_ss_p + setax_mc_p
     setax_s = setax_ss_s + setax_mc_s
-    setax = setax_p + setax_s
-    # no setax if self-employment income is low
-    if sey * sey_frac > SECA_Earnings_thd:
+    # Sch SE line 12: zero out if filing-unit SE earnings are below the
+    # $400 floor (Sch SE line 4: "stop; you do not owe SE tax")
+    if sey * seca_frac > SECA_Earnings_thd:
         setax = setax_p + setax_s
     else:
         setax = 0.0
 
-    # compute extra OASDI payroll taxes on the portion of the sum
-    # of wage-and-salary income and taxable self employment income
-    # that exceeds SS_Earnings_thd
-    sey_frac = 1.0 - 0.5 * (FICA_ss_trt_employer + FICA_ss_trt_employee)
-    was_plus_sey_p = gross_ws_p + max(0., sey_p * sey_frac)
-    was_plus_sey_s = gross_ws_s + max(0., sey_s * sey_frac)
+    # ---------- Reform-only extra OASDI bracket (not on Sch SE) ----------
+    # extra OASDI on the portion of (wages + taxable SE) above SS_Earnings_thd
+    extra_frac = 1.0 - 0.5 * ss_rate
+    was_plus_sey_p = gross_ws_p + max(0., sey_p * extra_frac)
+    was_plus_sey_s = gross_ws_s + max(0., sey_s * extra_frac)
     extra_ss_income_p = max(0., was_plus_sey_p - SS_Earnings_thd)
     extra_ss_income_s = max(0., was_plus_sey_s - SS_Earnings_thd)
-    extra_payrolltax = (
-        extra_ss_income_p * (FICA_ss_trt_employer + FICA_ss_trt_employee) +
-        extra_ss_income_s * (FICA_ss_trt_employer + FICA_ss_trt_employee)
-    )
+    extra_payrolltax = ss_rate * (extra_ss_income_p + extra_ss_income_s)
 
-    # compute part of total payroll taxes for filing unit
+    # filing-unit payroll tax and OASDI-only part (HI excluded from ptax_oasdi)
     payrolltax = ptax_was + extra_payrolltax
-
-    # compute OASDI part of payroll taxes
     ptax_oasdi = (ptax_ss_ws_p + ptax_ss_ws_s +
                   setax_ss_p + setax_ss_s +
                   extra_payrolltax)
 
-    # compute earned* variables and AGI deduction for
-    # "employer share" of self-employment tax, c03260
-    # Note: c03260 is the amount on 2015 Form 1040, line 27
+    # ---------- earned-income outputs and Sch SE line 13 deduction ----------
+    # c03260: deductible half of SE tax (Sch SE line 13 / Sch 1 line 15),
+    # optionally reduced by the ALD_SelfEmploymentTax_hc reform haircut
     c03260 = (1. - ALD_SelfEmploymentTax_hc) * 0.5 * setax
     earned = max(0., e00200p + e00200s + sey - c03260)
     earned_p = max(0., (e00200p + sey_p -
@@ -300,7 +281,18 @@ def DependentCare(nu13, elderly_dependents, earned,
                   ALD_Dependents_Child_c, ALD_Dependents_Elder_c,
                   care_deduction):
     """
-    Computes dependent-care above-the-line deduction.
+    Computes the dependent-care above-the-line deduction.
+
+    Reform-only construct (originally specified for the 2016 Trump campaign
+    tax plan); no IRS form correspondence. Inert under current law because
+    all four ALD_Dependents_* parameters default to 0.0, which forces
+    care_deduction = 0. for every record.
+
+    The income test is a cliff, not a phaseout: filing units with earned
+    income above ALD_Dependents_thd[MARS-1] receive zero deduction.
+
+    care_deduction is summed into c02900 (Sch 1 line 26) by Adj under the
+    legacy/reform-only banner.
 
     Parameters
     ----------
@@ -329,12 +321,12 @@ def DependentCare(nu13, elderly_dependents, earned,
     care_deduction: float
         Total above the line deductions for dependent care.
     """
-
-    if earned <= ALD_Dependents_thd[MARS - 1]:
-        care_deduction = (((1. - ALD_Dependents_hc) * nu13 *
-                           ALD_Dependents_Child_c) +
-                          ((1. - ALD_Dependents_hc) * elderly_dependents *
-                           ALD_Dependents_Elder_c))
+    earned_thd = ALD_Dependents_thd[MARS - 1]
+    if earned <= earned_thd:
+        hc_frac = 1. - ALD_Dependents_hc
+        child_ded = hc_frac * nu13 * ALD_Dependents_Child_c
+        elder_ded = hc_frac * elderly_dependents * ALD_Dependents_Elder_c
+        care_deduction = child_ded + elder_ded
     else:
         care_deduction = 0.
     return care_deduction
@@ -343,13 +335,12 @@ def DependentCare(nu13, elderly_dependents, earned,
 @iterate_jit(nopython=True)
 def Adj(e03220, e03290, c03260, e03300, e03270,
         e03400, e03500, e03150, e03210,
-        e03230, e03240, e00800, care_deduction,
+        e03230, e03240, care_deduction,
         ALD_EducatorExpenses_hc, ALD_HSADeduction_hc,
         ALD_KEOGH_SEP_hc, ALD_SelfEmp_HealthIns_hc,
         ALD_EarlyWithdraw_hc, ALD_AlimonyPaid_hc,
         ALD_IRAContributions_hc, ALD_StudentLoan_hc,
         ALD_Tuition_hc, ALD_DomesticProduction_hc,
-        ALD_AlimonyReceived_hc,
         c02900):
     """
     Adj calculates Form 1040 AGI adjustments (i.e., Above-the-Line Deductions).
@@ -378,13 +369,10 @@ def Adj(e03220, e03290, c03260, e03300, e03270,
         Student loan interest paid (Sch 1 line 21)
     e03230: float
         Tuition and fees, Form 8917
-        (legacy; expired after 2020)
+        (legacy; permanently repealed for tax years after 2020)
     e03240: float
         Domestic production activity deduction, Form 8903
         (legacy; expired after 2017)
-    e00800: float
-        Alimony received
-        (Sch 1 Part I line 2a; reform-only AGI exclusion via haircut)
     care_deduction: float
         Dependent care expense deduction (reform construct)
     ALD_EducatorExpenses_hc: float
@@ -407,18 +395,18 @@ def Adj(e03220, e03290, c03260, e03300, e03270,
         Tuition and fees haircut
     ALD_DomesticProduction_hc: float
         Domestic production haircut
-    ALD_AlimonyReceived_hc: float
-        Alimony received deduction haircut
 
     Returns
     -------
     c02900: float
-        Total of all "above the line" income adjustments to get AGI
+        Total above-the-line income adjustments (Sch 1 line 26;
+        flows to Form 1040 line 10)
     """
-    # Form 2555 foreign earned income exclusion is assumed to be zero.
-    # Sch 1 line 12 (reservist/artist/fee-basis-gov-official biz expenses,
-    # Form 2106) and line 23 (Archer MSA) are not modeled.
-    c02900 = (                                       # 2025 ORDERING:
+    # Sch 1 Part II lines not modeled: line 12 (reservist/artist/fee-basis
+    # gov-official biz expenses, Form 2106), line 14 (moving expenses for
+    # Armed Forces, Form 3903), line 23 (Archer MSA), and lines 24a-24z /
+    # 25 (other adjustments).
+    c02900 = (
         (1. - ALD_EducatorExpenses_hc) * e03220 +    # Sch 1 line 11
         (1. - ALD_HSADeduction_hc) * e03290 +        # Sch 1 line 13
         c03260 +                                     # Sch 1 line 15
@@ -428,10 +416,10 @@ def Adj(e03220, e03290, c03260, e03300, e03270,
         (1. - ALD_AlimonyPaid_hc) * e03500 +         # Sch 1 line 19a
         (1. - ALD_IRAContributions_hc) * e03150 +    # Sch 1 line 20
         (1. - ALD_StudentLoan_hc) * e03210 +         # Sch 1 line 21
-        (1. - ALD_Tuition_hc) * e03230 +             # expired post-2017
-        (1. - ALD_DomesticProduction_hc) * e03240 +  # expired post-2017
-        (1. - ALD_AlimonyReceived_hc) * e00800 +     # reform construct
-        care_deduction                               # reform construct
+        # legacy / reform-only items (zero under current law):
+        (1. - ALD_Tuition_hc) * e03230 +             # ALD repealed post-2020
+        (1. - ALD_DomesticProduction_hc) * e03240 +  # ALD expired post-2017
+        care_deduction                               # ALD reform construct
     )
     return c02900
 
@@ -441,40 +429,57 @@ def ALD_InvInc_ec_base(p22250, p23250,
                        e00300, e00600, e01100, e01200, MARS,
                        invinc_ec_base, Capital_loss_limitation):
     """
-    Computes invinc_ec_base.
+    Computes invinc_ec_base, the base amount of investment income that
+    the reform parameter ALD_InvInc_ec_rt multiplies in AGIIncome to
+    produce invinc_agi_ec, the dollar amount of investment income
+    excluded from AGI. No IRS form correspondence (reform plumbing);
+    inert under current law because ALD_InvInc_ec_rt defaults to 0.
+
+    The base is the sum of five investment-income components: taxable
+    interest, ordinary dividends, net capital gain/(loss) after the
+    Sch D §1211(b) per-MARS loss cap, capital-gain distributions not
+    reported on Schedule D, and other gain/(loss) from Form 4797.
+
+    Note: this function runs before CapGainsLoss in calc_all (so c01000
+    is not yet available) and therefore re-derives the loss-capped
+    capital gain locally as `cgain`. By construction `cgain` equals the
+    `c01000` that CapGainsLoss will produce one call later.
 
     Parameters
     ----------
     p22250: float
-        Net short-term capital gails/losses (Schedule D)
+        Net short-term capital gain/(loss) (Schedule D line 7)
     p23250: float
-        Net long-term capital gains/losses (Schedule D)
+        Net long-term capital gain/(loss) (Schedule D line 15)
     e00300: float
-        Taxable interest income
+        Taxable interest (Form 1040 line 2b)
     e00600: float
-        Ordinary dividends included in AGI
+        Ordinary dividends (Form 1040 line 3b)
     e01100: float
-        Capital gains distributions not reported on Schedule D
+        Capital gain distributions not reported on Schedule D
     e01200: float
-        Other net gain/loss from Form 4797
+        Other gain/(loss) from Form 4797 (Schedule 1 line 4)
     MARS: int
         Filing marital status (1=single, 2=joint, 3=separate,
                                4=household-head, 5=widow(er))
     invinc_ec_base: float
-        Exclusion of investment income from AGI
-    Capital_loss_limitation: float
-        Limitation on capital losses that are deductible
+        Base investment income subject to the reform exclusion
+        (consumed by AGIIncome via ALD_InvInc_ec_rt)
+    Capital_loss_limitation: list
+        MARS-indexed dollar limit on net capital loss deductible
+        against ordinary income (Schedule D line 21 cap)
 
     Returns
     -------
     invinc_ec_base: float
-        Exclusion of investment income from AGI
+        Base investment income subject to the reform exclusion
     """
-    # limitation on net short-term and long-term capital losses
+    # Schedule D line 21 / IRC §1211(b): cap any net capital loss at the
+    # MARS-indexed limit. Re-derived here (rather than reusing c01000)
+    # because CapGainsLoss has not yet run; result equals c01000.
     cgain = max(
         (-1 * Capital_loss_limitation[MARS - 1]), p22250 + p23250
     )
-    # compute exclusion of investment income from AGI
     invinc_ec_base = e00300 + e00600 + cgain + e01100 + e01200
     return invinc_ec_base
 
@@ -524,9 +529,10 @@ def CapGainsLoss(p22250, p23250, Capital_loss_limitation, MARS,
 def AGIIncome(e00200, e00300, e00400, e00600, e00650, e00700, e00800,
               e00900, e01100, e01200, e01400, e01700, e02000, e02100,
               e02300, e02400, c01000, c02900, e03210, e03230, e03240,
-              ALD_StudentLoan_hc, ALD_InvInc_ec_rt, invinc_ec_base,
+              ALD_StudentLoan_hc, ALD_Tuition_hc, ALD_DomesticProduction_hc,
+              ALD_InvInc_ec_rt, invinc_ec_base,
               CG_nodiff, CG_ec, CG_reinvest_ec_rt,
-              ALD_BusinessLosses_c, MARS,
+              ALD_BusinessLosses_c, AlimonyReceived_frac_in_AGI, MARS,
               ymod, ymod1, invinc_agi_ec):
     """
     Builds ymod1 (Form 1040 income lines + Schedule 1 Part I, the
@@ -552,7 +558,9 @@ def AGIIncome(e00200, e00300, e00400, e00600, e00650, e00700, e00800,
       Taxable refunds of state and local income taxes
       (Schedule 1 line 1)
     e00800: float
-      Alimony received (Schedule 1 line 2a)
+      Alimony received, before TCJA inclusion gating (Schedule 1
+      line 2a; included in ymod1 only to the extent of
+      AlimonyReceived_frac_in_AGI)
     e00900: float
       Schedule C business net profit/(loss) (Schedule 1 line 3)
     e01100: float
@@ -585,6 +593,13 @@ def AGIIncome(e00200, e00300, e00400, e00600, e00650, e00700, e00800,
       Domestic production activities deduction (legacy)
     ALD_StudentLoan_hc: float
       Reform haircut on the student loan interest deduction
+    ALD_Tuition_hc: float
+      Haircut on the tuition-and-fees deduction (1.0 from 2021,
+      after IRC §222 was repealed by the Taxpayer Certainty and
+      Disaster Tax Relief Act of 2020 §104)
+    ALD_DomesticProduction_hc: float
+      Haircut on the domestic-production-activities deduction
+      (1.0 from 2018, after TCJA §13305(a) repealed IRC §199)
     ALD_InvInc_ec_rt: float
       Reform exclusion rate for investment income
     invinc_ec_base: float
@@ -600,6 +615,11 @@ def AGIIncome(e00200, e00300, e00400, e00600, e00650, e00700, e00800,
       CG_nodiff
     ALD_BusinessLosses_c: list
       Reform: MARS-indexed cap on combined Sch C + Sch E losses
+    AlimonyReceived_frac_in_AGI: float
+      Fraction of e00800 (alimony received) included in AGI.
+      1.0 pre-TCJA (alimony was income to the recipient); 0.0 under
+      TCJA (alimony received excluded from income for divorce or
+      separation agreements executed after 2018-12-31)
     MARS: int
       Filing marital status
     ymod: float
@@ -622,7 +642,12 @@ def AGIIncome(e00200, e00300, e00400, e00600, e00650, e00700, e00800,
     # reform: exclude a fraction of investment income from AGI
     invinc_agi_ec = ALD_InvInc_ec_rt * max(0., invinc_ec_base)
     # ymod1 = Form 1040 income lines + Schedule 1 Part I
-    ymod1 = (e00200 + e00700 + e00800 + e01400 + e01700 +
+    # (e00800 = alimony received, Sch 1 line 2a, included only to the
+    # extent of AlimonyReceived_frac_in_AGI -- TCJA excludes alimony
+    # received from income for post-2018 divorces.)
+    ymod1 = (e00200 + e00700 +
+             AlimonyReceived_frac_in_AGI * e00800 +
+             e01400 + e01700 +
              invinc - invinc_agi_ec + e02100 + e02300 +
              max(e00900 + e02000, -ALD_BusinessLosses_c[MARS - 1]))
     if CG_nodiff:
@@ -633,9 +658,16 @@ def AGIIncome(e00200, e00300, e00400, e00600, e00650, e00700, e00800,
                           CG_reinvest_ec_rt * max(0., qdcg_pos - CG_ec))
         ymod1 = max(0., ymod1 - qdcg_exclusion)
         invinc_agi_ec += qdcg_exclusion
-    # ymod = modAGI used by the SS-benefits worksheet (Pub. 915)
+    # ymod = modAGI used by the SS-benefits worksheet (Pub. 915).
+    # Worksheet line 6 = "Schedule 1, lines 11 through 20, and 23 and
+    # 25" — it excludes Sch 1 line 21 (student loan interest) and the
+    # legacy tuition / domestic-production lines. ymod3 adds back the
+    # exact amount Adj subtracted into c02900 for those three items so
+    # the worksheet line 6 omission is undone symmetrically.
     ymod2 = e00400 + (0.50 * e02400) - c02900
-    ymod3 = (1. - ALD_StudentLoan_hc) * e03210 + e03230 + e03240
+    ymod3 = ((1. - ALD_StudentLoan_hc) * e03210 +
+             (1. - ALD_Tuition_hc) * e03230 +
+             (1. - ALD_DomesticProduction_hc) * e03240)
     ymod = ymod1 + ymod2 + ymod3
     return (ymod, ymod1, invinc_agi_ec)
 
@@ -644,7 +676,30 @@ def AGIIncome(e00200, e00300, e00400, e00600, e00650, e00700, e00800,
 def SSBenefits(MARS, ymod, e02400, SS_all_in_agi, SS_thd1, SS_thd2,
                SS_percentage1, SS_percentage2, c02500):
     """
-    Calculates OASDI benefits included in AGI, c02500.
+    Calculates the taxable portion of OASDI benefits, c02500
+    (Form 1040 line 6b), per the Social Security Benefits Worksheet
+    in the Form 1040 instructions (also published as Pub. 915).
+
+    The three-branch form below is algebraically equivalent to the
+    worksheet's all-min/max formulation:
+      * ymod < thd1                : worksheet line 9 <= 0
+                                     -> c02500 = 0
+      * thd1 <= ymod < thd2        : worksheet line 11 = 0
+                                     -> c02500 = p1 * min(ymod - thd1,
+                                                          e02400)
+      * ymod >= thd2               : full worksheet
+                                     -> c02500 = min(p2 * (ymod - thd2)
+                                                     + p1 * min(e02400,
+                                                                thd2 - thd1),
+                                                     p2 * e02400)
+    where ymod is the worksheet line 7 amount built in AGIIncome.
+    Note: MARS=3 thresholds correspond to "MFS lived apart all year";
+    Tax-Calculator does not model the MFS-lived-together case (base = 0).
+
+    The reform flag SS_all_in_agi (default False under current law)
+    overrides the worksheet and includes 100% of OASDI in AGI.
+
+    Downstream: c02500 is added to c00100 (AGI) by AGI().
 
     Parameters
     ----------
@@ -652,38 +707,47 @@ def SSBenefits(MARS, ymod, e02400, SS_all_in_agi, SS_thd1, SS_thd2,
         Filing marital status (1=single, 2=joint, 3=separate,
                                4=household-head, 5=widow(er))
     ymod: float
-        Variable that is used in OASDI benefit taxation logic
+        Worksheet line 7 (provisional income) built in AGIIncome
     e02400: float
-        Total social security (OASDI) benefits
+        Total OASDI benefits (worksheet line 1; SSA-1099 box 5 sum)
     SS_all_in_agi: bool
-        Whether all social security benefits are included in AGI
+        Reform: include 100% of OASDI in AGI (override worksheet)
     SS_thd1: list
-        Threshold for social security benefit taxability (1)
+        MARS-indexed worksheet line 8 base amount
     SS_thd2: list
-        Threshold for social security benefit taxability (2)
+        MARS-indexed (line 8 + line 10) second-tier threshold
     SS_percentage1: float
-        Social security taxable income decimal fraction (1)
+        First-tier inclusion rate (worksheet line 13; 0.50 current law)
     SS_percentage2: float
-        Social security taxable income decimal fraction (2)
+        Second-tier inclusion rate (worksheet lines 15/17; 0.85 current law)
     c02500: float
-        Social security (OASDI) benefits included in AGI
+        Taxable OASDI benefits (Form 1040 line 6b)
 
     Returns
     -------
     c02500: float
-        Social security (OASDI) benefits included in AGI
+        Taxable OASDI benefits (Form 1040 line 6b)
     """
-    if ymod < SS_thd1[MARS - 1]:
-        c02500 = 0.
-    elif ymod < SS_thd2[MARS - 1]:
-        c02500 = SS_percentage1 * min(ymod - SS_thd1[MARS - 1], e02400)
-    else:
-        c02500 = min(SS_percentage2 * (ymod - SS_thd2[MARS - 1]) +
-                     SS_percentage1 *
-                     min(e02400, SS_thd2[MARS - 1] -
-                         SS_thd1[MARS - 1]), SS_percentage2 * e02400)
+    # reform: include all OASDI in AGI (override worksheet)
     if SS_all_in_agi:
         c02500 = e02400
+        return c02500
+    thd1 = SS_thd1[MARS - 1]  # worksheet line 8
+    thd2 = SS_thd2[MARS - 1]  # worksheet line 8 + line 10
+    if ymod < thd1:
+        # worksheet line 9 <= 0
+        c02500 = 0.
+    elif ymod < thd2:
+        # worksheet line 11 = 0; c02500 = line 14 = min(line 2, line 13)
+        c02500 = SS_percentage1 * min(ymod - thd1, e02400)
+    else:
+        # c02500 = line 18 = min(line 16, line 17)
+        # line 16 = line 14 + line 15
+        #         = p1 * min(e02400, thd2 - thd1) + p2 * (ymod - thd2)
+        # line 17 = p2 * e02400
+        c02500 = min(SS_percentage2 * (ymod - thd2) +
+                     SS_percentage1 * min(e02400, thd2 - thd1),
+                     SS_percentage2 * e02400)
     return c02500
 
 
@@ -692,6 +756,17 @@ def UBI(nu18, n1820, n21, UBI_u18, UBI_1820, UBI_21, UBI_ecrt,
         ubi, taxable_ubi, nontaxable_ubi):
     """
     Calculates total and taxable Universal Basic Income (UBI) amount.
+
+    Reform construct with no IRS-form correspondence. The per-person UBI
+    parameters (UBI_u18, UBI_1820, UBI_21) default to 0 in current law,
+    so this function is inert unless a reform activates UBI.
+
+    Outputs flow as follows:
+      ubi            -> BenefitPrograms (benefit_cost_total and, via
+                        BEN_*_value, benefit_value_total which feeds
+                        expanded_income)
+      taxable_ubi    -> AGI (added to c00100)
+      nontaxable_ubi -> Records-bound output only; not consumed downstream
 
     Parameters
     ----------
@@ -708,22 +783,23 @@ def UBI(nu18, n1820, n21, UBI_u18, UBI_1820, UBI_21, UBI_ecrt,
     UBI_21: float
         UBI benefit for those 21 or more
     UBI_ecrt: float
-        Fraction of UBI benefits that are not included in AGI
+        Fraction of UBI benefits excluded from AGI; the complementary
+        fraction (1 - UBI_ecrt) is the taxable share added to AGI
     ubi: float
-        Total UBI received by the tax unit (is included in expanded_income)
+        Total UBI received by the tax unit
     taxable_ubi: float
         Amount of UBI that is taxable (is added to AGI)
     nontaxable_ubi: float
-        Amount of UBI that is nontaxable
+        Amount of UBI that is excluded from AGI
 
     Returns
     -------
     ubi: float
-        Total UBI received by the tax unit (is included in expanded_income)
+        Total UBI received by the tax unit
     taxable_ubi: float
         Amount of UBI that is taxable (is added to AGI)
     nontaxable_ubi: float
-        Amount of UBI that is nontaxable
+        Amount of UBI that is excluded from AGI
     """
     ubi = nu18 * UBI_u18 + n1820 * UBI_1820 + n21 * UBI_21
     taxable_ubi = ubi * (1. - UBI_ecrt)
@@ -861,74 +937,185 @@ def MiscDed(age_head, age_spouse, MARS, c00100, exact,
             tip_income_deduction,
             auto_loan_interest_deduction):
     """
-    Calculates below-the-line deduction for elderly head/spouse and
-    deductions on qualified overtime income, tip income, and
-    auto loan interest paid.
+    Computes the four below-the-line additional deductions on
+    Schedule 1-A (new for 2025): qualified tips (Part II), qualified
+    overtime compensation (Part III), qualified passenger-vehicle
+    loan interest (Part IV), and the enhanced deduction for seniors
+    (Part V). The four amounts are summed into Schedule 1-A line 38
+    (Form 1040 line 13b) and consumed downstream by `StdDed`/`TaxInc`.
+
+    Each part caps the qualified input, then phases the cap out as
+    MAGI exceeds a MARS-indexed start. Tips, overtime, and auto-loan
+    use an `exact==1` stepped phaseout (floor or ceil of
+    `excess / step_size`, scaled by `rate_per_step`) and a smooth
+    linear fallback that gives sensible marginal-tax-rate behavior.
+    The senior phaseout is always smooth (form Part V line 34
+    multiplies by 6%, no step rounding).
+
+    MAGI: Schedule 1-A line 3 adds foreign-income exclusions (Puerto
+    Rico, Form 2555 lines 45/50, Form 4563 line 15) to AGI; those
+    inputs are not modeled in Tax-Calculator records, so `c00100`
+    (Form 1040 line 11 AGI) is used directly as the MAGI proxy.
+
+    MFS (`MARS=3`): Parts II/III/V state "If married, you must file
+    jointly to claim this deduction"; the function therefore zeroes
+    the tip, overtime, and senior deductions when `MARS=3`. Part IV
+    (auto loan) carries no MFS restriction and is allowed for MFS.
+
+    Senior deduction is per eligible head/spouse (born before
+    1961-01-02 ≈ age 65+); each gets the line-35 amount.
+
+    Eligibility conditions documented on the form but not modeled
+    here include: valid SSN for taxpayer (and spouse if MFJ);
+    qualified-occupation listing for tips; qualified-overtime
+    classification; and the per-vehicle VIN/QPVLI definition for
+    auto-loan interest. The `tip_income`, `overtime_income`, and
+    `auto_loan_interest` inputs are assumed to already represent
+    the form-qualified amounts.
 
     Parameters
     ----------
     age_head: int
         Age of tax unit head
-    age_head: int
+    age_spouse: int
         Age of tax unit spouse
     MARS: int
         Filing marital status (1=single, 2=joint, 3=separate,
                                4=household-head, 5=widow(er))
     c00100: float
-        Adjusted gross income
+        Adjusted gross income (Form 1040 line 11); used as the
+        MAGI proxy for Schedule 1-A line 3
     exact: int
         Whether or not to smooth deduction phase out
-    SeniorDed_c: float
-        Maximum amount of senior deduction per head/spouse aged 65+
-    SeniorDed_ps: list[float]
-        Senior deduction AGI phase-out start level
-    SeniorDed_prt: float
-        Senior deduction phase-out rate
-    overtime_income: float
-        Overtime income qualified for a misc deduction
-    OvertimeIncomeDed_c: list[float]
-        overtime_income_deduction cap
-    OvertimeIncomeDed_ps: list[float]
-        overtime_income_deduction phase-out modified AGI start
-    OvertimeIncomeDed_po_step_size: float
-        Deduction phase-out AGI step size
-    OvertimeIncomeDed_po_rate_per_step: float
-        Deduction phase-out rate per AGI step
+    -- Part II (Tips, Sch 1-A lines 4-13) --
     tip_income: float
-        Tip income qualified for a misc deduction
+        Qualified tips received (Sch 1-A line 6)
     TipIncomeDed_c: float
-        tip_income_deduction cap
+        Cap on qualified tips deduction (Sch 1-A line 7)
     TipIncomeDed_ps: list[float]
-        tip_income_deduction phase-out modified AGI start
+        Phase-out start MAGI (Sch 1-A line 9)
     TipIncomeDed_po_step_size: float
-        Deduction phase-out AGI step size
+        Phase-out MAGI step size (Sch 1-A line 11 denominator)
     TipIncomeDed_po_rate_per_step: float
-        Deduction phase-out rate per AGI step
+        Phase-out rate per MAGI step (Sch 1-A line 12 multiplier
+        divided by line 11 step size)
+    -- Part III (Overtime, Sch 1-A lines 14-21) --
+    overtime_income: float
+        Qualified overtime compensation (Sch 1-A line 14c)
+    OvertimeIncomeDed_c: list[float]
+        Cap on overtime deduction (Sch 1-A line 15)
+    OvertimeIncomeDed_ps: list[float]
+        Phase-out start MAGI (Sch 1-A line 17)
+    OvertimeIncomeDed_po_step_size: float
+        Phase-out MAGI step size (Sch 1-A line 19 denominator)
+    OvertimeIncomeDed_po_rate_per_step: float
+        Phase-out rate per MAGI step (Sch 1-A line 20)
+    -- Part IV (Auto loan interest, Sch 1-A lines 22-30) --
     auto_loan_interest: float
-        Qualified auto loan interest paid
+        Qualified passenger-vehicle loan interest paid
+        (Sch 1-A line 23)
     AutoLoanInterestDed_c: float
-        Deduction cap
-    AutoLoanInterestDed_ps: float
-        Deduction phase-out starts above this AGI
+        Cap on auto loan interest deduction (Sch 1-A line 24)
+    AutoLoanInterestDed_ps: list[float]
+        Phase-out start MAGI (Sch 1-A line 26)
     AutoLoanInterestDed_po_step_size: float
-        Deduction phase-out AGI step size
+        Phase-out MAGI step size (Sch 1-A line 28 denominator)
     AutoLoanInterestDed_po_rate_per_step: float
-        Deduction phase-out rate per AGI step
+        Phase-out rate per MAGI step (Sch 1-A line 29)
+    -- Part V (Seniors, Sch 1-A lines 31-37) --
+    SeniorDed_c: float
+        Maximum amount of senior deduction per elderly head/spouse
+        (Sch 1-A line 35 base, $6,000 for 2025)
+    SeniorDed_ps: list[float]
+        Phase-out start MAGI (Sch 1-A line 32)
+    SeniorDed_prt: float
+        Phase-out rate (Sch 1-A line 34, 6% for 2025)
 
     Returns
     -------
     senior_deduction: float
-        Deduction available to both itemizers and nonitemizers
+        Sch 1-A line 37 (enhanced deduction for seniors)
     overtime_income_deduction: float
-        Deduction available to both itemizers and nonitemizers
+        Sch 1-A line 21 (qualified overtime compensation deduction)
     tip_income_deduction: float
-        Deduction available to both itemizers and nonitemizers
+        Sch 1-A line 13 (qualified tips deduction)
     auto_loan_interest_deduction: float
-        Deduction available to both itemizers and nonitemizers
+        Sch 1-A line 30 (qualified passenger vehicle loan interest
+        deduction)
     """
     # pylint: disable=too-many-statements,too-many-branches
+    # ----------------------------------------------------------------
+    # Sch 1-A Part I (lines 1-3): Modified AGI
+    # Foreign-income add-backs (lines 2a-2d) are not modeled in
+    # Tax-Calculator records, so AGI (Form 1040 line 11 = c00100)
+    # is the MAGI proxy used by all four parts below.
+    # ----------------------------------------------------------------
     magi = c00100
-    # calculate senior deduction
+    # ----------------------------------------------------------------
+    # Sch 1-A Part II (lines 4-13): No Tax on Tips
+    # MFJ-only if married (MARS=3 disallowed).
+    # ----------------------------------------------------------------
+    tip_income_deduction = 0.
+    if tip_income > 0. and MARS != 3:
+        ded = min(tip_income, TipIncomeDed_c)  # line 7 (cap)
+        po_start = TipIncomeDed_ps[MARS - 1]  # line 9
+        if magi > po_start:  # line 10 (excess)
+            excess_agi = magi - po_start
+            po_rate = TipIncomeDed_po_rate_per_step
+            if exact == 1:  # exact calculation as on tax forms
+                step_size = TipIncomeDed_po_step_size
+                steps = math.floor(excess_agi / step_size)  # line 11
+                po_amount = steps * step_size * po_rate  # line 12
+            else:  # smoothed calculation needed for sensible mtr calculation
+                po_amount = excess_agi * po_rate
+            ded = max(0., ded - po_amount)  # line 13
+        tip_income_deduction = ded
+    # ----------------------------------------------------------------
+    # Sch 1-A Part III (lines 14-21): No Tax on Overtime
+    # MFJ-only if married (MARS=3 disallowed).
+    # ----------------------------------------------------------------
+    overtime_income_deduction = 0.
+    if overtime_income > 0. and MARS != 3:
+        ded = min(overtime_income,
+                  OvertimeIncomeDed_c[MARS - 1])  # line 15 (cap)
+        po_start = OvertimeIncomeDed_ps[MARS - 1]  # line 17
+        if magi > po_start:  # line 18 (excess)
+            excess_agi = magi - po_start
+            po_rate = OvertimeIncomeDed_po_rate_per_step
+            if exact == 1:  # exact calculation as on tax forms
+                step_size = OvertimeIncomeDed_po_step_size
+                steps = math.floor(excess_agi / step_size)  # line 19
+                po_amount = steps * step_size * po_rate  # line 20
+            else:  # smoothed calculation needed for sensible mtr calculation
+                po_amount = excess_agi * po_rate
+            ded = max(0., ded - po_amount)  # line 21
+        overtime_income_deduction = ded
+    # ----------------------------------------------------------------
+    # Sch 1-A Part IV (lines 22-30): No Tax on Car Loan Interest
+    # No MFS restriction on the form; allowed for all MARS values.
+    # Step rounding is CEIL (line 28 "increase to next higher whole
+    # number"), unlike Parts II/III which FLOOR.
+    # ----------------------------------------------------------------
+    auto_loan_interest_deduction = 0.
+    if AutoLoanInterestDed_c > 0. and auto_loan_interest > 0.:
+        ded = min(auto_loan_interest, AutoLoanInterestDed_c)  # line 24
+        po_start = AutoLoanInterestDed_ps[MARS - 1]  # line 26
+        if magi > po_start:  # line 27 (excess)
+            excess_agi = magi - po_start
+            po_rate = AutoLoanInterestDed_po_rate_per_step
+            if exact == 1:  # exact calculation as on tax forms
+                step_size = AutoLoanInterestDed_po_step_size
+                steps = math.ceil(excess_agi / step_size)  # line 28
+                po_amount = steps * step_size * po_rate  # line 29
+            else:  # smoothed calculation needed for sensible mtr calculation
+                po_amount = excess_agi * po_rate
+            ded = max(0., ded - po_amount)  # line 30
+        auto_loan_interest_deduction = ded
+    # ----------------------------------------------------------------
+    # Sch 1-A Part V (lines 31-37): Enhanced Deduction for Seniors
+    # MFJ-only if married (MARS=3 disallowed); per eligible
+    # head/spouse aged 65+. Phaseout is smooth 6% (no exact branch).
+    # ----------------------------------------------------------------
     senior_deduction = 0.
     if SeniorDed_c > 0. and MARS != 3:
         seniors = 0
@@ -937,66 +1124,14 @@ def MiscDed(age_head, age_spouse, MARS, c00100, exact,
         if MARS == 2 and age_spouse >= 65:
             seniors += 1
         if seniors > 0:
-            po_start = SeniorDed_ps[MARS - 1]
-            if magi > po_start:
+            po_start = SeniorDed_ps[MARS - 1]  # line 32
+            if magi > po_start:  # line 33 (excess)
                 excess_agi = magi - po_start
-                po_amount = excess_agi * SeniorDed_prt
-                per_person_ded = max(0., SeniorDed_c - po_amount)
+                po_amount = excess_agi * SeniorDed_prt  # line 34
+                per_person_ded = max(0., SeniorDed_c - po_amount)  # line 35
             else:
-                per_person_ded = SeniorDed_c
-            senior_deduction = seniors * per_person_ded
-    # calculate overtime_income_deduction
-    overtime_income_deduction = 0.
-    if overtime_income > 0. and MARS != 3:
-        ded = min(overtime_income, OvertimeIncomeDed_c[MARS - 1])
-        po_start = OvertimeIncomeDed_ps[MARS - 1]
-        if magi > po_start:
-            # phase out deduction
-            excess_agi = magi - po_start
-            po_rate = OvertimeIncomeDed_po_rate_per_step
-            if exact == 1:  # exact calculation as on tax forms
-                step_size = OvertimeIncomeDed_po_step_size
-                steps = math.floor(excess_agi / step_size)
-                po_amount = steps * step_size * po_rate
-            else:  # smoothed calculation needed for sensible mtr calculation
-                po_amount = excess_agi * po_rate
-            ded = max(0., ded - po_amount)
-        overtime_income_deduction = ded
-    # calculate tip_income_deduction
-    tip_income_deduction = 0.
-    if tip_income > 0. and MARS != 3:
-        ded = min(tip_income, TipIncomeDed_c)
-        po_start = TipIncomeDed_ps[MARS - 1]
-        if magi > po_start:
-            # phase out deduction
-            excess_agi = magi - po_start
-            po_rate = TipIncomeDed_po_rate_per_step
-            if exact == 1:  # exact calculation as on tax forms
-                step_size = TipIncomeDed_po_step_size
-                steps = math.floor(excess_agi / step_size)
-                po_amount = steps * step_size * po_rate
-            else:  # smoothed calculation needed for sensible mtr calculation
-                po_amount = excess_agi * po_rate
-            ded = max(0., ded - po_amount)
-        tip_income_deduction = ded
-    # calculate auto loan interest deduction
-    auto_loan_interest_deduction = 0.
-    if AutoLoanInterestDed_c > 0. and auto_loan_interest > 0.:
-        # cap deduction
-        ded = min(auto_loan_interest, AutoLoanInterestDed_c)
-        po_start = AutoLoanInterestDed_ps[MARS - 1]
-        if magi > po_start:
-            # phase out deduction
-            excess_agi = magi - po_start
-            po_rate = AutoLoanInterestDed_po_rate_per_step
-            if exact == 1:  # exact calculation as on tax forms
-                step_size = AutoLoanInterestDed_po_step_size
-                steps = math.ceil(excess_agi / step_size)
-                po_amount = steps * step_size * po_rate
-            else:  # smoothed calculation needed for sensible mtr calculation
-                po_amount = excess_agi * po_rate
-            ded = max(0., ded - po_amount)
-        auto_loan_interest_deduction = ded
+                per_person_ded = SeniorDed_c  # line 33: use $6,000 base
+            senior_deduction = seniors * per_person_ded  # lines 36a/36b/37
     return (senior_deduction, overtime_income_deduction,
             tip_income_deduction, auto_loan_interest_deduction)
 
@@ -1018,26 +1153,38 @@ def ItemDed(e17500, e18400, e18500, e19200,
             ID_StateLocalTax_crt, ID_RealEstate_crt, ID_Charity_f,
             ID_reduction_rate):
     """
-    Calculates itemized deductions, Form 1040, Schedule A.
+    Calculates itemized deductions, Schedule A (Form 1040).
+
+    Body sections mirror Schedule A's six-section structure:
+      Medical (lines 1-4) → Taxes (5-7) → Interest (8-10) →
+      Charity (11-14) → Casualty (15) → Other (16) → Total (17).
+
+    Schedule A inputs and form-arithmetic come first within each
+    section; reform/legacy plumbing (per-section haircuts ``_hc``,
+    per-section MARS-indexed dollar caps ``_c``, and AGI-fraction
+    caps/floors absent from the form) is interleaved.
+
+    Three post-Sch-A reform/legacy operations apply to the line-17
+    total ``c21060``: (1) the §68 Pease limitation (repealed by TCJA
+    for 2018-2025; parameters retained for reform use); (2) the OBBBA
+    top-bracket reduction (``ID_reduction_rate``, mutually exclusive
+    with Pease via assert); (3) a reform hard cap ``ID_c`` on total
+    itemized deductions. No attempt is made to adjust the per-section
+    components for these post-total limitations; only ``c04470``
+    reflects them.
+
+    Unmodeled Schedule A items: line 5c (state and local personal
+    property taxes), line 6 (other taxes), line 13 (charity carryover
+    from prior year). Mortgage interest (line 8) and investment
+    interest (line 9) are pre-aggregated in input variable ``e19200``.
+    The OBBBA SALT-cap phaseout (line 5e text: "If Form 1040 line 11b
+    is more than $500,000 ($250,000 MFS), see instructions") is
+    implemented via ``ID_AllTaxes_c`` + ``ID_AllTaxes_c_ps`` +
+    ``ID_AllTaxes_c_po_rate`` + ``ID_AllTaxes_c_po_floor``.
 
     Parameters
     ----------
-    e17500: float
-        Schedule A: medical expenses
-    e18400: float
-        Schedule A: state and local income taxes deductlbe
-    e18500: float
-        Schedule A: state and local real estate taxes deductible
-    e19200: float
-        Schedule A: interest deduction deductible
-    e19800: float
-        Schedule A: charity cash contributions deductible
-    e20100: float
-        Schedule A: charity noncash contributions deductible
-    e20400: float
-        Schedule A: gross miscellaneous deductions deductible
-    g20500: float
-        Schedule A: gross casualty or theft loss deductible
+    -- Filer attributes --
     MARS: int
         Filing marital status (1=single, 2=joint, 3=separate,
                                4=household-head, 5=widow(er))
@@ -1046,182 +1193,234 @@ def ItemDed(e17500, e18400, e18500, e19200,
     age_spouse: int
         Age in years of spouse
     c00100: float
-        Adjusted gross income (AGI)
+        Adjusted gross income (Form 1040 line 11)
     c04600: float
-        Personal exemptions after phase out
-    c04470: float
-        Itemized deductions after all limitations (0 for non-itemizers)
-    c21040: float
-        Itemized deductions that are limited under the Pease limitations
-    c21060: float
-        Itemized deductions before limitation (0 for non-itemizers)
-    c17000: float
-        Schedule A: medical expenses deducted
-    c18300: float
-        Schedule A: state and local taxes plus real estate taxes deducted
-    c19200: float
-        Schedule A: interest deducted
-    c19700: float
-        Schedule A: charity contributions deducted
-    c20500: float
-        Schedule A: net casualty or theft loss deducted
-    c20800: float
-        Schedule A: net limited miscellaneous deductions deducted
+        Personal exemptions after phase out (used by OBBBA reduction
+        block to derive a taxable-income proxy)
     II_brk6: list
-        Bottom of top income tax rate bracket
-    ID_ps: list
-        Itemized deduction phaseout AGI start (Pease)
+        Bottom of top income tax rate bracket (used by OBBBA reduction)
+    -- Sch A Medical and Dental Expenses (lines 1-4) --
+    e17500: float
+        Medical and dental expenses paid (Sch A line 1)
     ID_Medical_frt: float
-        Floor (as decimal fraction of AGI) for deductible medical expenses
+        AGI floor rate for medical-expense deduction (Sch A line 3,
+        7.5% under current law)
     ID_Medical_frt_add4aged: float
-        Add on floor (as decimal fraction of AGI) for deductible
-        medical expenses for elderly filing units
+        Add-on AGI floor rate for filers age 65+ (zero post-TCJA)
     ID_Medical_hc: float
-        Medical expense deduction haircut
-    ID_Casualty_frt: float
-        Floor (as decimal fraction of AGI) for deductible casualty loss
-    ID_Casualty_hc: float
-        Casualty expense deduction haircut
-    ID_Miscellaneous_frt: float
-        Floor (as decimal fraction of AGI) for deductible
-        miscellaneous expenses
-    ID_Miscellaneous_hc: float
-        Miscellaneous expense deduction haircut
-    ID_Charity_crt_all: float
-        Ceiling (as decimal fraction of AGI) for all charitable
-        contribution deductions
-    ID_Charity_crt_noncash: float
-        Ceiling (as decimal fraction of AGI) for noncash charitable
-        contribution deductions
-    ID_prt: float
-        Itemized deduction phaseout rate (Pease)
-    ID_crt: float
-        Itemized deduction maximum phaseout as a decimal fraction of total
-        itemized deductions (Pease)
-    ID_c: list
-        Ceiling on the amount of itemized deductions allowed (dollars)
-    ID_StateLocalTax_hc: float
-        State and local income and sales taxes deduction haircut
-    ID_Charity_frt: float
-        Floor (as decimal fraction of AGI) for deductible charitable
-        contributions
-    ID_Charity_hc: float
-        Charity expense deduction haircut
-    ID_InterestPaid_hc: float
-        Interest paid deduction haircut
-    ID_RealEstate_hc: float
-        State, local, and foreign real estate taxes deductions haircut
+        Reform haircut on medical-expense deduction
     ID_Medical_c: list
-        Ceiling on the amount of medical expense deduction allowed (dollars)
+        Reform per-MARS dollar cap on medical-expense deduction
+    -- Sch A Taxes You Paid (lines 5-7) --
+    e18400: float
+        State and local income or sales taxes (Sch A line 5a)
+    e18500: float
+        State and local real estate taxes (Sch A line 5b)
+    ID_StateLocalTax_hc: float
+        Reform haircut on Sch A line 5a
+    ID_RealEstate_hc: float
+        Reform haircut on Sch A line 5b
     ID_StateLocalTax_c: list
-        Ceiling on the amount of state and local income and sales taxes
-        deduction allowed (dollars)
+        Reform per-MARS dollar cap on Sch A line 5a
     ID_RealEstate_c: list
-        Ceiling on the amount of state, local, and foreign real estate taxes
-        deduction allowed (dollars)
-    ID_InterestPaid_c: list
-        Ceiling on the amount of interest paid deduction allowed (dollars)
-    ID_Charity_c: list
-        Ceiling on the amount of charity expense deduction allowed (dollars)
-    ID_Casualty_c: list
-        Ceiling on the amount of casualty expense deduction allowed (dollars)
-    ID_Miscellaneous_c: list
-        Ceiling on the amount of miscellaneous expense deduction
-        allowed (dollars)
-    ID_AllTaxes_c: list
-        Cap on the amount of state and local income, sales, and
-        real estate deductions allowed (dollars)
-    ID_AllTaxes_hc: float
-        State and local income, sales, and real estate tax deduciton haircut
-    ID_AllTaxes_c_ps: float
-        AGI level above which ID_AllTaxes_c is reduced
-    ID_AllTaxes_c_po_rate: float
-        ID_AllTaxes_c reduction rate when AGI is above ID_AllTaxes_c_ps
-    ID_AllTaxes_c_po_floor: float
-        Floor below which ID_AllTaxes_c cannot be reduced
+        Reform per-MARS dollar cap on Sch A line 5b
     ID_StateLocalTax_crt: float
-        Ceiling (as decimal fraction of AGI) for the combination of all
-        state and local income and sales tax deductions
+        Reform AGI-fraction cap on Sch A line 5a
     ID_RealEstate_crt: float
-        Ceiling (as decimal fraction of AGI) for the combination of all
-        state, local, and foreign real estate tax deductions
+        Reform AGI-fraction cap on Sch A line 5b
+    ID_AllTaxes_hc: float
+        Reform haircut on combined Sch A line 5d (state+local+RE)
+    ID_AllTaxes_c: list
+        SALT cap base amount on Sch A line 5e ($40k / $20k MFS for 2025)
+    ID_AllTaxes_c_ps: list
+        AGI level above which the line 5e SALT cap phases out
+        ($500k / $250k MFS for 2025 per OBBBA)
+    ID_AllTaxes_c_po_rate: float
+        Phaseout rate per dollar of AGI above ID_AllTaxes_c_ps
+    ID_AllTaxes_c_po_floor: list
+        Floor below which the SALT cap cannot be reduced by the phaseout
+    -- Sch A Interest You Paid (lines 8-10) --
+    e19200: float
+        Total deductible interest (mortgage line 8e + investment line 9,
+        pre-aggregated in input data)
+    ID_InterestPaid_hc: float
+        Reform haircut on interest deduction
+    ID_InterestPaid_c: list
+        Reform per-MARS dollar cap on interest deduction
+    -- Sch A Gifts to Charity (lines 11-14) --
+    e19800: float
+        Cash charitable contributions (Sch A line 11)
+    e20100: float
+        Non-cash charitable contributions (Sch A line 12)
+    ID_Charity_frt: float
+        AGI-fraction floor on total charitable contributions (OBBBA
+        introduces 0.5% for tax years 2026+; not on form face)
     ID_Charity_f: list
-        Floor on the amount of charity expense deduction allowed (dollars)
+        Per-MARS dollar floor on charitable contributions
+    ID_Charity_crt_all: float
+        AGI-fraction ceiling on total charitable contributions
+        (~50% / 60% per IRC §170(b))
+    ID_Charity_crt_noncash: float
+        AGI-fraction ceiling on noncash charitable contributions
+    ID_Charity_hc: float
+        Reform haircut on charitable deduction
+    ID_Charity_c: list
+        Reform per-MARS dollar cap on charitable deduction
+    -- Sch A Casualty and Theft Losses (line 15) --
+    g20500: float
+        Casualty / theft loss after Form 4684 10% AGI floor
+    ID_Casualty_frt: float
+        Reform additional AGI-fraction floor (zero under current law
+        because g20500 is already post-Form-4684)
+    ID_Casualty_hc: float
+        Reform haircut on casualty deduction
+    ID_Casualty_c: list
+        Reform per-MARS dollar cap on casualty deduction
+    -- Sch A Other Itemized Deductions (line 16, "miscellaneous") --
+    e20400: float
+        Gross miscellaneous deductions
+    ID_Miscellaneous_frt: float
+        AGI-fraction floor (pre-TCJA 2% rule retained for reform use)
+    ID_Miscellaneous_hc: float
+        Reform haircut (1.0 under current law — TCJA repealed line-16
+        miscellaneous deductions for 2018-2025)
+    ID_Miscellaneous_c: list
+        Reform per-MARS dollar cap on miscellaneous deduction
+    -- Post-form reform/legacy on Sch A line 17 total --
+    ID_ps: list
+        Pease phaseout AGI start (per MARS)
+    ID_prt: float
+        Pease phaseout rate
+    ID_crt: float
+        Pease maximum-phaseout fraction of total itemizable amount
     ID_reduction_rate: float
-        OBBBA reduction rate for all itemized deductions
+        OBBBA top-bracket reduction rate on itemized deductions
+    ID_c: list
+        Reform hard cap on total itemized deductions (per MARS)
+    -- iterate_jit Records-bound outputs (also appear as inputs) --
+    c17000: float
+        Sch A line 4 (medical expenses deducted)
+    c18300: float
+        Sch A line 7 (state and local taxes deducted)
+    c19200: float
+        Sch A line 10 (interest deducted)
+    c19700: float
+        Sch A line 14 (charity deducted)
+    c20500: float
+        Sch A line 15 (casualty / theft loss deducted)
+    c20800: float
+        Sch A line 16 (other / miscellaneous deducted)
+    c21040: float
+        Pease phaseout amount applied to itemized deductions
+    c21060: float
+        Sch A line 17 (gross total before Pease / OBBBA / reform cap)
+    c04470: float
+        Final itemized deductions after Pease / OBBBA / reform cap
+        (zero for non-itemizers)
 
     Returns
     -------
-    c17000: float
-        Schedule A: medical expenses deducted
-    c18300: float
-        Schedule A: state and local taxes plus real estate taxes deducted
-    c19200: float
-        Schedule A: interest deducted
-    c19700: float
-        Schedule A: charity contributions deducted
-    c20500: float
-        Schedule A: net casualty or theft loss deducted
-    c20800: float
-        Schedule A: net limited miscellaneous deductions deducted
-    c21040: float
-        Itemized deductions that are phased out under Pease limitation
-    c21060: float
-        Itemized deductions before any limitation (0 for non-itemizers)
-    c04470: float
-        Itemized deductions after all limitations (0 for non-itemizers)
+    c17000, c18300, c19200, c19700, c20500, c20800, c21040, c21060, c04470
+    (see Records-bound section above for line correspondences)
     """
     # pylint: disable=too-many-statements
     posagi = max(c00100, 0.)
-    # Medical
-    medical_frt = ID_Medical_frt
+    # ----------------------------------------------------------------
+    # Sch A Medical and Dental Expenses (lines 1-4)
+    # Reform plumbing: ID_Medical_frt_add4aged (age 65+ floor add-on,
+    # zero post-TCJA), ID_Medical_hc haircut, ID_Medical_c dollar cap.
+    # ----------------------------------------------------------------
+    medical_frt = ID_Medical_frt  # line 3 floor rate (7.5% of AGI)
     if age_head >= 65 or (MARS == 2 and age_spouse >= 65):
         medical_frt += ID_Medical_frt_add4aged
-    c17750 = medical_frt * posagi
-    c17000 = max(0., e17500 - c17750) * (1. - ID_Medical_hc)
-    c17000 = min(c17000, ID_Medical_c[MARS - 1])
-    # State and local taxes
+    c17750 = medical_frt * posagi  # line 3
+    c17000 = max(0., e17500 - c17750) * (1. - ID_Medical_hc)  # line 4
+    c17000 = min(c17000, ID_Medical_c[MARS - 1])  # reform cap
+    # ----------------------------------------------------------------
+    # Sch A Taxes You Paid (lines 5-7)
+    # Line 5c (personal property tax) and line 6 (other taxes) are
+    # unmodeled. Per-component reform plumbing: ID_StateLocalTax_c /
+    # ID_RealEstate_c (per-MARS dollar caps); ID_StateLocalTax_crt /
+    # ID_RealEstate_crt (AGI-fraction caps); ID_AllTaxes_hc (haircut on
+    # combined 5d). The OBBBA 5e SALT cap with $500k/$250k phaseout is
+    # implemented via ID_AllTaxes_c + ID_AllTaxes_c_ps +
+    # ID_AllTaxes_c_po_rate + ID_AllTaxes_c_po_floor.
+    # ----------------------------------------------------------------
     c18400 = min((1. - ID_StateLocalTax_hc) * max(e18400, 0.),
-                 ID_StateLocalTax_c[MARS - 1])
+                 ID_StateLocalTax_c[MARS - 1])  # line 5a (state inc/sales)
     c18500 = min((1. - ID_RealEstate_hc) * e18500,
-                 ID_RealEstate_c[MARS - 1])
-    # following two statements implement a cap on c18400 and c18500 in a way
-    # that those with negative AGI, c00100, are not capped under current law,
-    # hence the 0.0001 rather than zero
+                 ID_RealEstate_c[MARS - 1])  # line 5b (real estate)
+    # Per-component AGI-fraction caps. The 0.0001 (rather than zero)
+    # leaves filers with negative AGI uncapped under current law.
     c18400 = min(c18400, ID_StateLocalTax_crt * max(c00100, 0.0001))
     c18500 = min(c18500, ID_RealEstate_crt * max(c00100, 0.0001))
-    c18300 = (c18400 + c18500) * (1. - ID_AllTaxes_hc)
-    cap = ID_AllTaxes_c[MARS - 1]
-    if posagi > ID_AllTaxes_c_ps[MARS - 1]:
-        excess_agi = posagi - ID_AllTaxes_c_ps[MARS - 1]
-        cap = max(0., cap - excess_agi * ID_AllTaxes_c_po_rate)
-        cap = max(cap, ID_AllTaxes_c_po_floor[MARS - 1])
-    c18300 = min(c18300, cap)
-    # Interest paid
-    c19200 = e19200 * (1. - ID_InterestPaid_hc)
-    c19200 = min(c19200, ID_InterestPaid_c[MARS - 1])
-    # Charity
-    floor = max(ID_Charity_frt * posagi, ID_Charity_f[MARS - 1])
-    noncash_ded = max(0., e20100 - floor)
+    c18300 = (c18400 + c18500) * (1. - ID_AllTaxes_hc)  # line 5d sum + hc
+    salt_cap = ID_AllTaxes_c[MARS - 1]  # line 5e base cap
+    salt_ps = ID_AllTaxes_c_ps[MARS - 1]  # line 5e phaseout start
+    if posagi > salt_ps:
+        salt_excess_agi = posagi - salt_ps
+        salt_cap = max(0., salt_cap - salt_excess_agi * ID_AllTaxes_c_po_rate)
+        salt_cap = max(salt_cap, ID_AllTaxes_c_po_floor[MARS - 1])
+    # c18300 is line 5e final (= line 7, since line 6 is unmodeled)
+    c18300 = min(c18300, salt_cap)
+    # ----------------------------------------------------------------
+    # Sch A Interest You Paid (lines 8-10)
+    # Mortgage (line 8e) and investment (line 9) interest are
+    # pre-aggregated in input variable e19200. Reform plumbing:
+    # ID_InterestPaid_hc, ID_InterestPaid_c (no on-form analogue).
+    # ----------------------------------------------------------------
+    c19200 = e19200 * (1. - ID_InterestPaid_hc)  # line 10 (= 8e + 9)
+    c19200 = min(c19200, ID_InterestPaid_c[MARS - 1])  # reform cap
+    # ----------------------------------------------------------------
+    # Sch A Gifts to Charity (lines 11-14)
+    # On-form: e19800 = line 11 (cash), e20100 = line 12 (noncash);
+    # line 13 (carryover) not modeled. Reform/OBBBA plumbing:
+    # ID_Charity_frt (AGI-fraction floor; OBBBA's 0.5% kicks in 2026+),
+    # ID_Charity_f (dollar floor), ID_Charity_crt_noncash (AGI cap on
+    # noncash), ID_Charity_crt_all (AGI cap on total per IRC §170(b)),
+    # ID_Charity_hc, ID_Charity_c. Floor is applied to noncash first,
+    # any unused remainder against cash.
+    # ----------------------------------------------------------------
+    charity_floor = max(ID_Charity_frt * posagi, ID_Charity_f[MARS - 1])
+    noncash_ded = max(0., e20100 - charity_floor)
     charity_ded_noncash = min(ID_Charity_crt_noncash * posagi, noncash_ded)
-    remaining_floor = max(0., floor - e20100)
+    remaining_floor = max(0., charity_floor - e20100)
     charity_ded_cash = max(0., e19800 - remaining_floor)
-    c19700 = charity_ded_noncash + charity_ded_cash
+    c19700 = charity_ded_noncash + charity_ded_cash  # line 14
     c19700 = min(c19700, ID_Charity_crt_all * posagi) * (1. - ID_Charity_hc)
     c19700 = min(c19700, ID_Charity_c[MARS - 1])
-    # Casualty
+    # ----------------------------------------------------------------
+    # Sch A Casualty and Theft Losses (line 15)
+    # g20500 is post-Form-4684 (10% AGI floor already applied), so
+    # ID_Casualty_frt defaults to 0 under current law.
+    # ----------------------------------------------------------------
     c20500 = (max(0., g20500 - ID_Casualty_frt * posagi) *
-              (1. - ID_Casualty_hc))
-    c20500 = min(c20500, ID_Casualty_c[MARS - 1])
-    # Miscellaneous
-    c20400 = e20400
-    c20750 = ID_Miscellaneous_frt * posagi
-    c20800 = max(0., c20400 - c20750) * (1. - ID_Miscellaneous_hc)
-    c20800 = min(c20800, ID_Miscellaneous_c[MARS - 1])
-    # Gross total itemized deductions
+              (1. - ID_Casualty_hc))  # line 15
+    c20500 = min(c20500, ID_Casualty_c[MARS - 1])  # reform cap
+    # ----------------------------------------------------------------
+    # Sch A Other Itemized Deductions (line 16, "miscellaneous" in code)
+    # The pre-TCJA 2%-of-AGI miscellaneous deductions are repealed for
+    # current law (ID_Miscellaneous_hc = 1.0); parameters retained for
+    # reform use.
+    # ----------------------------------------------------------------
+    c20750 = ID_Miscellaneous_frt * posagi  # reform AGI floor
+    c20800 = max(0., e20400 - c20750) * (1. - ID_Miscellaneous_hc)  # line 16
+    c20800 = min(c20800, ID_Miscellaneous_c[MARS - 1])  # reform cap
+    # ----------------------------------------------------------------
+    # Sch A Total Itemized Deductions (line 17 = sum of 4+7+10+14+15+16)
+    # ----------------------------------------------------------------
     c21060 = c17000 + c18300 + c19200 + c19700 + c20500 + c20800
-    # Pease limitation on total itemized deductions
-    # (no attempt to adjust c04470 components for limitation)
+    # ----------------------------------------------------------------
+    # Reform/legacy post-form stack (no Sch A correspondence):
+    # (1) §68 Pease overall-limitation — repealed by TCJA for 2018-2025;
+    #     parameters retained for reform use. Excludes medical (c17000)
+    #     and casualty (c20500) per §68(c).
+    # (2) OBBBA top-bracket reduction (ID_reduction_rate). Mutually
+    #     exclusive with Pease via the assert.
+    # (3) Reform hard cap ID_c on total itemized deductions.
+    # No attempt is made to adjust c04470's components for any of these
+    # post-total limitations.
+    # ----------------------------------------------------------------
     nonlimited = c17000 + c20500
     limitstart = ID_ps[MARS - 1]
     if c21060 > nonlimited and c00100 > limitstart:
@@ -1232,8 +1431,6 @@ def ItemDed(e17500, e18400, e18500, e19200,
     else:
         c21040 = 0.
         c04470 = c21060
-    # OBBBA limitation on total itemized deductions
-    # (no attempt to adjust c04470 components for limitation)
     reduction = 0.
     if ID_reduction_rate > 0.:
         assert c21040 <= 0.0, 'Pease and OBBBA cannot both be in effect'
@@ -1241,137 +1438,239 @@ def ItemDed(e17500, e18400, e18500, e19200,
         texcess = max(0., tincome - II_brk6[MARS - 1])
         reduction = ID_reduction_rate * texcess
     c04470 = max(0., c04470 - reduction)
-    # Cap total itemized deductions
-    # (no attempt to adjust c04470 components for limitation)
     c04470 = min(c04470, ID_c[MARS - 1])
-    # Return total itemized deduction amounts and pre-limitation components
     return (c17000, c18300, c19200, c19700, c20500, c20800,
             c21040, c21060, c04470)
 
 
 @iterate_jit(nopython=True)
-def AdditionalMedicareTax(e00200, MARS,
-                          AMEDT_ec, sey, AMEDT_rt,
-                          FICA_mc_trt_employer, FICA_mc_trt_employee,
+def AdditionalMedicareTax(MARS, e00200,
+                          e00900p, e00900s, e02100p, e02100s, k1bx14p, k1bx14s,
                           FICA_ss_trt_employer, FICA_ss_trt_employee,
+                          FICA_mc_trt_employer, FICA_mc_trt_employee,
+                          AMEDT_ec, AMEDT_rt,
                           ptax_amc):
     """
-    Computes Additional Medicare Tax (Form 8959) included in othertaxes.
+    Form 8959 Additional Medicare Tax. Liability flows into Schedule 2
+    line 11 via `othertaxes` in `C1040` and ultimately into `iitax`.
+
+    Form 8959 has five Parts:
+      Part I  (lines 1-7)  Additional Medicare Tax on Medicare wages
+      Part II (lines 8-13) Additional Medicare Tax on SE income
+      Part III(lines 14-17)Additional Medicare Tax on RRTA compensation
+                           — *not modeled* (no RRTA variables in records)
+      Part IV (line 18)    Total = line 7 + line 13 (+ line 17)
+      Part V  (lines 19-24)Withholding reconciliation — refundable side,
+                           not part of liability.
+
+    Tax-Calculator does not separately track Medicare wages (W-2 box 5)
+    from Form 4137 unreported tips and Form 8919 wages, so `e00200`
+    substitutes for Form 8959 line 4 (the sum of lines 1+2+3).
+
+    Form 8959 line 8 (Sch SE Part I line 6) is reconstructed per-spouse:
+    Sch SE is filed separately by each spouse, so each spouse's net SE
+    earnings are floored at zero independently before the joint total is
+    formed. The records-bound `sey` is the unfloored sum, which would
+    over-net a positive-sey spouse against a negative-sey spouse; this
+    function therefore re-derives `sey_p`/`sey_s` from the underlying
+    per-spouse input components (matching `EI_PayrollTax`) and applies
+    the per-spouse 0-floor before summing.
+
+    The line-5 / line-9 / line-15 thresholds are identical on the form
+    ($250k MFJ / $125k MFS / $200k Single/HoH/QSS for 2025) and are
+    parameterized by `AMEDT_ec[MARS-1]`. The 0.9% rate is parameterized
+    by `AMEDT_rt`.
 
     Parameters
-    -----
+    ----------
     MARS: int
-        Filing marital status (1=single, 2=joint, 3=separate,
-                               4=household-head, 5=widow(er))
-    AMEDT_ec: list
-        Additional Medicare Tax earnings exclusion
-    AMEDT_rt: float
-        Additional Medicare Tax rate
-    FICA_ss_trt_employer: float
-        Employer side FICA Social Security tax rate
-    FICA_ss_trt_employee: float
-        Employee side FICA Social Security tax rate
-    FICA_mc_trt_employer: float
-        Employer side FICA Medicare tax rate
-    FICA_mc_trt_employee: float
-        Employee side FICA Medicare tax rate
+        Filing status (1=single, 2=joint, 3=separate,
+                       4=household-head, 5=widow(er))
+    -- Part I: Medicare wages (lines 1-7) --
     e00200: float
-        Wages and salaries
-    sey: float
-        Self-employment income
+        Wages and salaries; substitutes for Form 8959 line 4 (Medicare
+        wages from W-2 box 5 + Form 4137 line 6 + Form 8919 line 6)
+    -- Part II: Self-employment income (lines 8-13) --
+    e00900p: float
+        Sch C (taxpayer) net profit/loss; component of `sey_p`
+    e00900s: float
+        Sch C (spouse) net profit/loss; component of `sey_s`
+    e02100p: float
+        Sch F (taxpayer) net profit/loss; component of `sey_p`
+    e02100s: float
+        Sch F (spouse) net profit/loss; component of `sey_s`
+    k1bx14p: float
+        Sch K-1 box 14 SE earnings (taxpayer); component of `sey_p`
+    k1bx14s: float
+        Sch K-1 box 14 SE earnings (spouse); component of `sey_s`
+    FICA_ss_trt_employer: float
+        Employer-side FICA OASDI tax rate (Sch SE line 4c reduction)
+    FICA_ss_trt_employee: float
+        Employee-side FICA OASDI tax rate (Sch SE line 4c reduction)
+    FICA_mc_trt_employer: float
+        Employer-side FICA HI tax rate (Sch SE line 4c reduction)
+    FICA_mc_trt_employee: float
+        Employee-side FICA HI tax rate (Sch SE line 4c reduction)
+    -- Common to Parts I and II --
+    AMEDT_ec: list
+        Form 8959 line 5 / line 9 threshold by MARS
+    AMEDT_rt: float
+        Form 8959 line 7 / line 13 rate (0.9% under current law)
+    -- iterate_jit Records-bound output --
     ptax_amc: float
-        Additional Medicare Tax (included in othertaxes and iitax)
+        Additional Medicare Tax (Form 8959 line 18)
 
     Returns
     -------
     ptax_amc: float
-        Additional Medicare Tax (included in othertaxes and iitax)
+        Additional Medicare Tax (Form 8959 line 18)
     """
-    line8 = max(0., sey) * (
-        1. - 0.5 * (FICA_mc_trt_employer + FICA_mc_trt_employee +
-                    FICA_ss_trt_employer + FICA_ss_trt_employee)
-    )
-    line11 = max(0., AMEDT_ec[MARS - 1] - e00200)
-    ptax_amc = AMEDT_rt * (max(0., e00200 - AMEDT_ec[MARS - 1]) +
-                           max(0., line8 - line11))
+    threshold = AMEDT_ec[MARS - 1]  # line 5 (also line 9; same value)
+    seca_frac = 1. - 0.5 * (FICA_ss_trt_employer + FICA_ss_trt_employee +
+                            FICA_mc_trt_employer + FICA_mc_trt_employee)
+    # Per-spouse Sch SE Part I line 6 (each floored at 0; matches the
+    # `sey_p`/`sey_s` and `net_sey_p`/`net_sey_s` construction in
+    # `EI_PayrollTax`).
+    sey_p = e00900p + e02100p + k1bx14p
+    sey_s = e00900s + e02100s + k1bx14s
+    net_sey_p = max(0., sey_p * seca_frac)
+    net_sey_s = max(0., sey_s * seca_frac)
+    # -- Part I: Medicare wages (lines 1-7) --
+    line4 = e00200
+    line6 = max(0., line4 - threshold)
+    line7 = AMEDT_rt * line6
+    # -- Part II: Self-employment income (lines 8-13) --
+    line8 = net_sey_p + net_sey_s
+    line11 = max(0., threshold - line4)  # = max(0, line 9 - line 10)
+    line12 = max(0., line8 - line11)
+    line13 = AMEDT_rt * line12
+    # -- Part IV: Total (line 18); Part III RRTA not modeled --
+    ptax_amc = line7 + line13
     return ptax_amc
 
 
 @iterate_jit(nopython=True)
 def StdDed(DSI, earned, STD, age_head, age_spouse, STD_Aged, STD_Dep,
-           MARS, MIDR, blind_head, blind_spouse, standard,
+           STD_Dep_earned_add, MARS, MIDR, blind_head, blind_spouse, standard,
            STD_allow_charity_ded_nonitemizers, e19800, ID_Charity_crt_all,
            c00100, STD_charity_ded_nonitemizers_max):
     """
-    Calculates standard deduction, including standard deduction for
-    dependents, aged and bind.
+    Computes standard deduction (Form 1040 line 12).
+
+    Mirrors the "Standard Deduction for—" chart on Form 1040 line 12 and
+    the "Standard Deduction Worksheet for Dependents" in the 2025 Form
+    1040 instructions. The body is split into four sections:
+
+    1. MFS-and-spouse-itemizes override (line-12 chart bullet 3): if the
+       filer files married-separately and the spouse itemizes, the
+       standard deduction is zero (filer must itemize).
+    2. Basic standard deduction: either the dependent-worksheet amount
+       (if claimed as a dependent) or the line-12 chart's STD[MARS-1].
+       The dependent worksheet caps the deduction at STD[MARS-1] but
+       floors it at max(earned + STD_Dep_earned_add, STD_Dep).
+    3. Aged/blind add-on: STD_Aged[MARS-1] per checked box (filer 65+,
+       filer blind, spouse 65+, spouse blind). Spouse boxes only count
+       for MFJ filers.
+    4. Reform/legacy CARES cash-charity add-on for nonitemizers (off
+       under current law; STD_allow_charity_ded_nonitemizers defaults
+       to False).
+
+    The Records-bound output is `standard` (Form 1040 line 12);
+    downstream `TaxInc` consumes it into Form 1040 line 14.
 
     Parameters
     -----
     DSI: int
         1 if claimed as dependent on another return; otherwise 0
+        (selects the dependent worksheet branch)
     earned: float
-        Earned income for filing unit
+        Earned income for filing unit (dependent worksheet line 1)
     STD: list
-        Standard deduction amount
+        Per-MARS basic standard deduction (Form 1040 line-12 chart;
+        dependent worksheet line 6 / line-12 chart cap)
     age_head: int
-        Age in years of taxpayer
+        Age in years of taxpayer (≥65 → check filer aged box)
     age_spouse: int
-        Age in years of spouse
+        Age in years of spouse (≥65 → check spouse aged box; MFJ only)
     STD_Aged: list
-        Additional standard deduction for blind and aged
+        Per-MARS additional standard deduction per checked box
+        (per-box amount on the line-12 chart for aged/blind)
     STD_Dep: float
-        Standard deduction for dependents
+        Minimum dependent standard deduction (worksheet line 4)
+    STD_Dep_earned_add: float
+        Earned-income additional amount in the dependent worksheet
+        (worksheet line 2)
     MARS: int
         Filing (marital) status. (1=single, 2=joint, 3=separate,
                                   4=household-head, 5=widow(er))
     MIDR: int
         1 if separately filing spouse itemizes, 0 otherwise
+        (only meaningful when MARS=3)
     blind_head: int
-        1 if taxpayer is blind, 0 otherwise
+        1 if taxpayer is blind, 0 otherwise (filer blind box)
     blind_spouse: int
-        1 if spouse is blind, 0 otherwise
+        1 if spouse is blind, 0 otherwise (spouse blind box; MFJ only)
     standard: float
-        Standard deduction (zero for itemizers)
+        Records-bound output: standard deduction (zero for itemizers)
+    -- Reform/legacy CARES nonitemizer charity add-on --
     STD_allow_charity_ded_nonitemizers: bool
-        Allow standard deduction filers to take the charitable contributions
-        deduction
+        Allow standard deduction filers to take the charitable
+        contributions deduction (off under current law)
     e19800: float
-        Schedule A: cash charitable contributions
+        Schedule A line 11 cash charitable contributions
     ID_Charity_crt_all: float
-        Fraction of AGI cap on all charitable deductions
+        Fraction-of-AGI cap on all charitable deductions
     c00100: float
-        Federal AGI
-    STD_charity_ded_nonitemizers_max: float
-        Ceiling amount (in dollars) for charitable deductions for nonitemizers
+        Federal AGI (Form 1040 line 11)
+    STD_charity_ded_nonitemizers_max: list
+        Per-MARS ceiling amount (in dollars) on the nonitemizer
+        charitable contributions deduction
 
     Returns
     -------
     standard: float
         Standard deduction (zero for itemizers)
     """
-    # calculate deduction for dependents
-    if DSI == 1:
-        c15100 = max(350. + earned, STD_Dep)
-        basic_stded = min(STD[MARS - 1], c15100)
-    else:
-        c15100 = 0.
-        if MIDR == 1:
-            basic_stded = 0.
-        else:
-            basic_stded = STD[MARS - 1]
-    # calculate extra standard deduction for aged and blind
-    num_extra_stded = blind_head + blind_spouse
-    if age_head >= 65:
-        num_extra_stded += 1
-    if MARS == 2 and age_spouse >= 65:
-        num_extra_stded += 1
-    extra_stded = num_extra_stded * STD_Aged[MARS - 1]
-    # calculate the total standard deduction
-    standard = basic_stded + extra_stded
+    # ----------------------------------------------------------------
+    # MFS-and-spouse-itemizes override (Form 1040 line-12 instructions:
+    # "Married filing separately and your spouse itemizes deductions").
+    # Implementation invariant: MIDR=1 only occurs when MARS=3.
+    # ----------------------------------------------------------------
     if MARS == 3 and MIDR == 1:
         standard = 0.
-    # calculate CARES cash charity deduction for nonitemizers
+        return standard
+    # ----------------------------------------------------------------
+    # Basic standard deduction: dependent worksheet if claimed as a
+    # dependent, otherwise the Form 1040 line-12 chart value.
+    # ----------------------------------------------------------------
+    std_basic = STD[MARS - 1]                       # line-12 chart cap
+    if DSI == 1:
+        # Dependent Std Ded Worksheet:
+        # line 3 = earned + STD_Dep_earned_add  (worksheet lines 1+2)
+        # line 5 = max(line 3, STD_Dep)         (worksheet lines 4-5)
+        # line 7 = min(line 5, STD[MARS-1])     (worksheet line 7)
+        basic_stded = min(std_basic,
+                          max(earned + STD_Dep_earned_add, STD_Dep))
+    else:
+        basic_stded = std_basic
+    # ----------------------------------------------------------------
+    # Aged/blind add-on (line-12 chart): one STD_Aged box per
+    # 65+/blind condition on filer; spouse boxes only count for MFJ.
+    # ----------------------------------------------------------------
+    num_extra_stded = blind_head
+    if age_head >= 65:
+        num_extra_stded += 1
+    if MARS == 2:
+        num_extra_stded += blind_spouse
+        if age_spouse >= 65:
+            num_extra_stded += 1
+    extra_stded = num_extra_stded * STD_Aged[MARS - 1]
+    standard = basic_stded + extra_stded
+    # ----------------------------------------------------------------
+    # Reform/legacy CARES cash-charity add-on for nonitemizers
+    # (STD_allow_charity_ded_nonitemizers defaults to False under
+    # current law; active in 2020-2021 and under reforms).
+    # ----------------------------------------------------------------
     if STD_allow_charity_ded_nonitemizers:
         capped_ded = min(e19800, ID_Charity_crt_all * c00100)
         standard += min(capped_ded, STD_charity_ded_nonitemizers_max[MARS - 1])
@@ -1379,8 +1678,9 @@ def StdDed(DSI, earned, STD, age_head, age_spouse, STD_Aged, STD_Dep,
 
 
 @iterate_jit(nopython=True)
-def TaxInc(c00100, standard, c04470, c04600, MARS, e00900, c03260, e26270,
-           e02100, e27200, e00650, c01000,
+def TaxInc(c00100, standard, c04470, c04600, MARS,
+           e00900, c03260, e03270, e03300, e26270, e02100, e27200,
+           e00650, p22250, p23250,
            senior_deduction, overtime_income_deduction,
            tip_income_deduction, auto_loan_interest_deduction,
            PT_SSTB_income, PT_binc_w2_wages, PT_ubia_property,
@@ -1390,147 +1690,281 @@ def TaxInc(c00100, standard, c04470, c04600, MARS, e00900, c03260, e26270,
            PT_qbid_ps, PT_qbid_prt, PT_qbid_min_ded, PT_qbid_min_qbi,
            c04800, qbided):
     """
-    Calculates taxable income, c04800, and
-    qualified business income deduction, qbided.
+    Form 1040 lines 13-15 (2025): the §199A pass-through Qualified
+    Business Income deduction (line 13, from Form 8995 or Form 8995-A)
+    and regular taxable income (line 15 = AGI - line 14).
+
+    QBI deduction structure (TCJA §199A):
+      - Filers with pre-QBID taxable income at or below
+        PT_qbid_taxinc_thd[MARS-1] ($197,300 / $394,600 MFJ for 2025)
+        file the simplified Form 8995: deduction = PT_qbid_rt * QBI,
+        capped only by the income limitation.
+      - Filers above the threshold file Form 8995-A. In the phase-in
+        window of width PT_qbid_taxinc_gap[MARS-1] ($50,000 /
+        $100,000 MFJ) above the threshold:
+          * Specified Service Trade or Business (SSTB) filers have QBI
+            and W-2 wages / UBIA scaled by Schedule A's "applicable
+            percentage" = (upper_thd - taxinc) / gap, with full
+            disallowance once taxinc >= upper_thd.
+          * Non-SSTB filers face the W-2/UBIA cap with a Part III
+            phase-in reduction; above the window the cap binds in full.
+      - All filers face the Part IV income limitation: deduction may
+        not exceed PT_qbid_rt * (pre-QBID taxinc - net_cg), where
+        net_cg = qualified dividends + net long-term capital gain.
+
+    QBI components (Form 8995 line 1c instructions): Sch C net profit
+    `e00900`, Sch E partnership/S-corp `e26270`, Sch F `e02100`, Sch E
+    farm rent `e27200`. Wages (`e00200`) and investment income are NOT
+    QBI. QBI is reduced by the trade-or-business above-the-line items:
+    deductible part of SECA tax `c03260` (Sch 1 line 15), self-employed
+    retirement contributions `e03300` (Sch 1 line 16), and self-employed
+    health insurance `e03270` (Sch 1 line 17). REIT dividends and PTP
+    income (Form 8995 lines 6-9 / Form 8995-A Part IV lines 28-31) are
+    not modeled.
+
+    Pre-QBID taxable income (Form 8995 line 11 / Form 8995-A line 33)
+    subtracts from AGI: max(itemized, standard) + personal exemption
+    (reform-only `c04600`) + Sch 1-A senior/overtime/tip/auto-loan
+    deductions. The QBID is "stacked last" so that c04800 = max(0,
+    pre_qbid_taxinc - qbided).
+
+    Reform-only constructs (no IRS form analogue):
+      - PT_qbid_limited=False disables the W-2/UBIA cap, SSTB exclusion,
+        and phase-in entirely (deduction = PT_qbid_rt * QBI subject only
+        to the income cap).
+      - PT_qbid_ps / PT_qbid_prt: linear phase-out of the deduction
+        above PT_qbid_ps[MARS-1].
+      - PT_qbid_min_qbi / PT_qbid_min_ded: minimum-deduction floor for
+        filers with QBI at or above PT_qbid_min_qbi.
+
+    Downstream consumer: `c04800` is the input to `SchXYZ` /
+    `SchXYZTax` / `GainsTax` (regular tax) and to `AMT` (Form 6251).
 
     Parameters
     ----------
     c00100: float
-        Adjusted Gross Income (AGI)
+        Adjusted Gross Income (Form 1040 line 11)
     standard: float
-        Standard deduction (zero for itemizers)
+        Standard deduction (Form 1040 line 12; zero for itemizers)
     c04470: float
-        Itemized deductions after phase-out (zero for non-itemizers)
+        Itemized deductions after phase-out (Form 1040 line 12; zero
+        for non-itemizers)
     c04600: float
-        Personal exemptions after phase-out
+        Personal exemptions after phase-out (reform-only; zero under
+        current law for 2018-2025 per TCJA suspension)
     MARS: int
         Filing (marital) status. (1=single, 2=joint, 3=separate,
                                   4=household-head, 5=widow(er))
     e00900: float
-        Schedule C business net profit/loss for filing unit
+        Schedule C business net profit/loss (QBI component)
     c03260: float
-        Self-employment (SECA) tax above-the-line deduction
+        Self-employment (SECA) tax above-the-line deduction (Sch 1
+        line 15); subtracted from QBI per §199A
+    e03270: float
+        Self-employed health insurance deduction (Sch 1 line 17);
+        subtracted from QBI per Form 8995 line 1 instructions
+    e03300: float
+        Self-employed retirement contributions to SEP/SIMPLE/qualified
+        plans (Sch 1 line 16); subtracted from QBI per Form 8995 line 1
+        instructions
     e26270: float
-        Schedule E: combined partnership and S-corporation net income/loss
+        Schedule E partnership / S-corporation net income/loss (QBI
+        component)
     e02100: float
-        Farm net income/loss for filing unit from Schedule F
+        Schedule F farm net income/loss (QBI component)
     e27200: float
-        Schedule E: farm rent net income or loss
+        Schedule E farm rent net income/loss (QBI component)
     e00650: float
-        Qualified dividends included in ordinary dividends
-    c01000: float
-        Limitation on capital losses
+        Qualified dividends (Form 8995 line 12 / 8995-A line 34 input)
+    p22250: float
+        Sch D Part I line 7 (net short-term capital gain/loss); used
+        to compute §1(h) net capital gain for Form 8995 line 12 /
+        8995-A line 34
+    p23250: float
+        Sch D Part II line 15 (net long-term capital gain/loss); used
+        to compute §1(h) net capital gain for Form 8995 line 12 /
+        8995-A line 34
     senior_deduction: float
-        Deduction for elderly head/spouse
+        Sch 1-A Part V senior deduction (reduces pre-QBID taxinc)
     overtime_income_deduction: float
-        Deduction for qualified overtime income
+        Sch 1-A Part III overtime deduction (reduces pre-QBID taxinc)
     tip_income_deduction: float
-        Deduction for qualified tip income
+        Sch 1-A Part II tip deduction (reduces pre-QBID taxinc)
     auto_loan_interest_deduction: float
-        Deduction for qualified auto loan interest paid
+        Sch 1-A Part IV auto-loan-interest deduction (reduces pre-QBID
+        taxinc)
     PT_SSTB_income: int
-        Value of one implies business income is from a specified service
-          trade or business (SSTB)
-        Value of zero implies business income is from a qualified trade or
-          business
+        1 = QBI is from a Specified Service Trade or Business; 0 = QBI
+        is from a qualified (non-SSTB) trade or business
     PT_binc_w2_wages: float
-        Filing unit's share of total W-2 wages paid by the
-        pass-through business
+        Filing unit's allocable share of W-2 wages paid by the
+        pass-through business (Form 8995-A line 4)
     PT_ubia_property: float
-        Filing unit's share of total business property owned by the
-        pass-through business
+        Filing unit's allocable share of unadjusted basis immediately
+        after acquisition of qualified property (Form 8995-A line 7)
     PT_qbid_rt: float
-        Pass-through qualified business income deduction rate
+        QBID rate (Form 8995 line 5 / 8995-A line 3 multiplier; 20% in
+        2025)
     PT_qbid_limited: bool
-        Whether or not TCJA QBID limits are active
+        Reform switch; False disables the W-2/UBIA cap, SSTB exclusion,
+        and Part III phase-in
     PT_qbid_taxinc_thd: list
-        Lower threshold of pre-QBID taxable income
+        MARS-indexed lower threshold of pre-QBID taxable income (Form
+        8995-A line 21; $197,300 / $394,600 MFJ for 2025)
     PT_qbid_taxinc_gap: list
-        Dollar gap between upper and lower threshold of pre-QBID taxable income
+        MARS-indexed phase-in window width (Form 8995-A line 23;
+        $50,000 / $100,000 MFJ for 2025)
     PT_qbid_w2_wages_rt: float
-        QBID cap rate on pass-through business W-2 wages paid
+        Primary W-2-wages cap rate (Form 8995-A line 5; 50%)
     PT_qbid_alt_w2_wages_rt: float
-        Alternative QBID cap rate on pass-through business W-2 wages paid
+        Alternative W-2-wages cap rate (Form 8995-A line 6; 25%)
     PT_qbid_alt_property_rt: float
-        Alternative QBID cap rate on pass-through business property owned
+        Alternative UBIA cap rate (Form 8995-A line 8; 2.5%)
     PT_qbid_ps: list
-        QBID phaseout taxable income start
+        Reform-only QBID phase-out start (no form analogue)
     PT_qbid_prt: float
-        QBID phaseout rate
+        Reform-only QBID phase-out rate (no form analogue)
     PT_qbid_min_ded: float
-        Minimum QBID amount
+        Reform-only minimum QBID amount (no form analogue)
     PT_qbid_min_qbi: float
-        Minimum QBI necessary to get QBID no less than PT_qbid_min_ded
+        Reform-only minimum QBI to qualify for PT_qbid_min_ded floor
     c04800: float
-        Regular taxable income
+        Regular taxable income (Form 1040 line 15; iterate_jit
+        Records-bound output)
     qbided: float
-        Qualified Business Income (QBI) deduction
+        Qualified Business Income deduction (Form 1040 line 13;
+        iterate_jit Records-bound output)
 
     Returns
     -------
     c04800: float
-        Regular taxable income
+        Regular taxable income (Form 1040 line 15)
     qbided: float
-        Qualified Business Income (QBI) deduction
+        Qualified Business Income deduction (Form 1040 line 13)
     """
-    # calculate taxable income before qualified business income deduction,
-    # which is assumed to be stacked last in the list of deductions
+    # ----------------------------------------------------------------
+    # Pre-QBID taxable income (Form 8995 line 11 / Form 8995-A line 33)
+    # = Form 1040 line 15 with the QBID line removed. QBID is "stacked
+    # last" so all other below-AGI deductions are subtracted here:
+    # max(itemized, standard) + reform-only personal exemption +
+    # Sch 1-A senior/overtime/tip/auto-loan deductions.
+    # ----------------------------------------------------------------
     odeds = (
-        senior_deduction
-        + overtime_income_deduction
-        + tip_income_deduction
-        + auto_loan_interest_deduction
+        senior_deduction          # Sch 1-A Part V
+        + overtime_income_deduction  # Sch 1-A Part III
+        + tip_income_deduction       # Sch 1-A Part II
+        + auto_loan_interest_deduction  # Sch 1-A Part IV
     )
     pre_qbid_taxinc = max(0., c00100 - max(c04470, standard) - c04600 - odeds)
-    # calculate qualified business income deduction
-    qbinc = max(0., e00900 - c03260 + e26270 + e02100 + e27200)
-    qbid_before_limits = qbinc * PT_qbid_rt
+    # ----------------------------------------------------------------
+    # Qualified Business Income (QBI) build (Form 8995 line 1c /
+    # Form 8995-A line 2): Sch C net, Sch E partnership/S-corp, Sch F
+    # farm, Sch E farm rent, less the trade-or-business above-the-line
+    # items per Form 8995 line 1 instructions: deductible SE tax (Sch 1
+    # line 15), SE retirement (Sch 1 line 16), SE health insurance
+    # (Sch 1 line 17). Wages and investment income are NOT QBI.
+    # ----------------------------------------------------------------
+    qbinc = max(0., e00900 - c03260 - e03300 - e03270
+                + e26270 + e02100 + e27200)
+    qbid_before_limits = qbinc * PT_qbid_rt  # Form 8995 line 5 / 8995-A line 3
     if PT_qbid_limited:
-        lower_thd = PT_qbid_taxinc_thd[MARS - 1]
+        # ------------------------------------------------------------
+        # Form 8995-A Parts II/III: W-2 wage / UBIA cap and SSTB phase-in.
+        # Filers with pre_qbid_taxinc <= lower_thd file the simplified
+        # Form 8995 (no cap, no SSTB exclusion). Above lower_thd, four
+        # sub-cases per Form 8995-A: (a) SSTB above upper_thd: 0; (b)
+        # non-SSTB above upper_thd: line 11 = min(line 3, line 10); (c)
+        # non-SSTB in phase-in: Part III lines 24-26; (d) SSTB in
+        # phase-in: Schedule A scales QBI/W-2/UBIA by applicable %, then
+        # Part III applied to scaled values.
+        # ------------------------------------------------------------
+        lower_thd = PT_qbid_taxinc_thd[MARS - 1]  # 8995-A line 21
         if pre_qbid_taxinc <= lower_thd:
+            # Form 8995 path: no W-2/UBIA cap, no SSTB exclusion
             qbided = qbid_before_limits
         else:
-            pre_qbid_taxinc_gap = PT_qbid_taxinc_gap[MARS - 1]
-            upper_thd = lower_thd + pre_qbid_taxinc_gap
+            gap = PT_qbid_taxinc_gap[MARS - 1]    # 8995-A line 23
+            upper_thd = lower_thd + gap
             if PT_SSTB_income == 1 and pre_qbid_taxinc >= upper_thd:
+                # (a) SSTB above phase-in: deduction fully disallowed
                 qbided = 0.
             else:
+                # W-2 wage / UBIA cap (8995-A lines 4-10):
+                #   line 5  = 50% * W-2 wages
+                #   line 9  = 25% * W-2 wages + 2.5% * UBIA
+                #   line 10 = max(line 5, line 9)
                 wage_cap = PT_binc_w2_wages * PT_qbid_w2_wages_rt
                 alt_cap = (PT_binc_w2_wages * PT_qbid_alt_w2_wages_rt +
                            PT_ubia_property * PT_qbid_alt_property_rt)
                 full_cap = max(wage_cap, alt_cap)
                 if PT_SSTB_income == 0 and pre_qbid_taxinc >= upper_thd:
-                    # apply full cap
+                    # (b) non-SSTB above phase-in: line 11 =
+                    # min(line 3, line 10)
                     qbided = min(full_cap, qbid_before_limits)
                 elif PT_SSTB_income == 0 and pre_qbid_taxinc < upper_thd:
-                    # apply adjusted cap as in Part III of Worksheet 12-A
-                    # in 2018 IRS Publication 535 (Chapter 12)
-                    prt = (pre_qbid_taxinc - lower_thd) / pre_qbid_taxinc_gap
-                    adj = prt * (qbid_before_limits - full_cap)
+                    # (c) non-SSTB in phase-in: 8995-A Part III lines
+                    # 24-26. line 26 = line 17 - line 25
+                    #     = qbid_before_limits
+                    #         - prt * max(0, qbid_before_limits - full_cap)
+                    # where prt = line 24 = (taxinc - thd) / gap. Part III
+                    # is skipped when line 10 (full_cap) >= line 3
+                    # (qbid_before_limits), so the cap-vs-QBI excess is
+                    # floored at 0 to prevent the formula from inflating
+                    # qbided above qbid_before_limits.
+                    prt = (pre_qbid_taxinc - lower_thd) / gap
+                    adj = prt * max(0., qbid_before_limits - full_cap)
                     qbided = qbid_before_limits - adj
                 else:  # PT_SSTB_income == 1 and pre_qbid_taxinc < upper_thd
-                    prti = (upper_thd - pre_qbid_taxinc) / pre_qbid_taxinc_gap
-                    qbid_adjusted = prti * qbid_before_limits
-                    cap_adjusted = prti * full_cap
-                    prt = (pre_qbid_taxinc - lower_thd) / pre_qbid_taxinc_gap
-                    adj = prt * (qbid_adjusted - cap_adjusted)
+                    # (d) SSTB in phase-in: Schedule A scales QBI and
+                    # W-2/UBIA cap by applicable_pct = (upper_thd -
+                    # taxinc) / gap; Part III phase-in is then applied
+                    # to the Schedule-A-adjusted line 3 and line 10,
+                    # with the same Part-III-skipped floor as case (c).
+                    prti = (upper_thd - pre_qbid_taxinc) / gap  # applicable %
+                    qbid_adjusted = prti * qbid_before_limits  # Sch A line 3
+                    cap_adjusted = prti * full_cap             # Sch A line 10
+                    prt = (pre_qbid_taxinc - lower_thd) / gap
+                    adj = prt * max(0., qbid_adjusted - cap_adjusted)
                     qbided = qbid_adjusted - adj
-        # apply taxinc cap (assuming cap rate is equal to PT_qbid_rt)
-        #   net_cg is defined on line 34 of 2018 Pub 535 Worksheet 12-A
-        net_cg = e00650 + c01000
+        # ------------------------------------------------------------
+        # Form 8995-A Part IV: income limitation (lines 33-37; same
+        # role as Form 8995 lines 11-15). Form 8995 line 12 / 8995-A
+        # line 34 net_cg = §1(h) net capital gain (excess of net LTCG
+        # over net STCL) plus qualified dividends per §199A(e)(3) and
+        # the form 8995 instructions. Net STCG must NOT enter net_cg,
+        # so we use p22250/p23250 directly rather than the post-cap
+        # Sch D total c01000 = p22250 + p23250 (capped at -3000).
+        # Income cap = PT_qbid_rt * (pre_qbid_taxinc - net_cg) is
+        # line 36 / 14; final qbided = min(line 32, line 36) is
+        # line 37 / 15.
+        # ------------------------------------------------------------
+        net_ltcg = max(0., p23250)
+        net_stcl = max(0., -p22250)
+        net_cg = max(0., net_ltcg - net_stcl) + e00650
         taxinc_cap = PT_qbid_rt * max(0., pre_qbid_taxinc - net_cg)
         qbided = min(qbided, taxinc_cap)
-        # apply qbid phaseout
+        # ------------------------------------------------------------
+        # Reform-only: linear QBID phase-out above PT_qbid_ps (no IRS
+        # form analogue).
+        # ------------------------------------------------------------
         if qbided > 0. and pre_qbid_taxinc > PT_qbid_ps[MARS - 1]:
             excess = pre_qbid_taxinc - PT_qbid_ps[MARS - 1]
             qbided = max(0., qbided - PT_qbid_prt * excess)
-    else:  # if PT_qbid_limited is false
+    else:
+        # Reform: TCJA W-2/UBIA cap, SSTB exclusion, Part III phase-in,
+        # and Part IV income limitation all disabled.
         qbided = qbid_before_limits
-    # apply minimum QBID logic
+    # ----------------------------------------------------------------
+    # Reform-only: minimum QBID floor for filers with QBI at or above
+    # PT_qbid_min_qbi (no IRS form analogue).
+    # ----------------------------------------------------------------
     if qbinc >= PT_qbid_min_qbi and qbided < PT_qbid_min_ded:
         qbided = PT_qbid_min_ded
-
-    # calculate taxable income after qbided
+    # ----------------------------------------------------------------
+    # Form 1040 line 15: taxable income = pre_qbid_taxinc - qbided
+    # (line 14 = std/itemized + QBID; QBID stacked last as documented
+    # in pre_qbid_taxinc construction above).
+    # ----------------------------------------------------------------
     c04800 = max(0., pre_qbid_taxinc - qbided)
     return (c04800, qbided)
 
@@ -1786,15 +2220,13 @@ def GainsTax(e00650, c01000, c23650, p23250, e01100, e58990,
         Regular tax on regular taxable income before credits
     """
     # pylint: disable=too-many-statements
-    if c01000 > 0. or c23650 > 0. or p23250 > 0. or e01100 > 0. or e00650 > 0.:
-        hasqdivltcg = 1  # has qualified dividends or long-term capital gains
-    else:
-        hasqdivltcg = 0  # no qualified dividends or long-term capital gains
+    has_qdivltcg = (
+        not CG_nodiff and
+        (c01000 > 0. or c23650 > 0. or p23250 > 0. or
+         e01100 > 0. or e00650 > 0.)
+    )
 
-    if CG_nodiff:
-        hasqdivltcg = 0  # no special taxation of qual divids and l-t cap gains
-
-    if hasqdivltcg == 1:
+    if has_qdivltcg:
 
         # ---- Sch D TW lines 1-10 (common to QDCGTW) ----------------------
         dwks1 = c04800                    # line 1: taxable income
@@ -1804,17 +2236,13 @@ def GainsTax(e00650, c01000, c23650, p23250, e01100, e58990,
         dwks5 = max(0., dwks3 - dwks4)    # line 5
         dwks6 = max(0., dwks2 - dwks5)    # line 6
         dwks7 = min(p23250, c23650)       # line 7: min(Sch D ln 15, ln 16)
-        # line 8: dwks8 = min(dwks3, dwks4) = 0 (since dwks4 = 0)
-        # line 9 (per IRS form): dwks9 = max(0, dwks7 - dwks8) = max(0, dwks7)
-        # The line-9 formula below deviates from the form to splice in
-        # e01100 (capital-gain distributions reported when no Sch D is
-        # filed) and to reduce dwks9 by negative e58990.  See BUG? note in
-        # CODE_REVIEW_2025.md row 17.
-        if e01100 > 0.:
-            c24510 = e01100
-        else:
-            c24510 = max(0., dwks7) + e01100
-        dwks9 = max(0., c24510 - min(0., e58990))      # line 9
+        dwks8 = min(dwks3, dwks4)         # line 8: min(4952 ln 4g, ln 4e) = 0
+        # line 9: max(0, dwks7 - dwks8) is the on-form value when Sch D
+        # was filed; when Sch D was not filed, p23250 = c23650 = 0 so
+        # dwks7 = 0 and the QDCGTW counterpart of line 9 is e01100
+        # (capital gain distributions on Form 1040 line 7).  The two
+        # cases are mutually exclusive, so the sum captures both.
+        dwks9 = max(0., dwks7 - dwks8) + e01100        # line 9
         dwks10 = dwks6 + dwks9                         # line 10
 
         # ---- Sch D TW lines 11-13 (Sch D TW only; vanish in QDCGTW) -----
@@ -1876,7 +2304,7 @@ def GainsTax(e00650, c01000, c23650, p23250, e01100, e58990,
         dwks45 = min(dwks43, dwks44)          # line 45: smaller of 43, 44
         c24580 = dwks45
 
-    else:  # if hasqdivltcg is zero
+    else:  # no qualified-rate preference
 
         c24580 = c05200
         dwks10 = max(0., min(p23250, c23650)) + e01100
@@ -1885,45 +2313,66 @@ def GainsTax(e00650, c01000, c23650, p23250, e01100, e58990,
         dwks18 = 0.
         dwks43 = 0.
 
-    # final calculations done no matter what the value of hasqdivltcg
-    c05100 = c24580  # because foreign earned income exclusion is assumed zero
-    c05700 = 0.  # no Form 4972, Lump Sum Distributions
-    taxbc = c05700 + c05100
+    # final assembly (foreign earned income exclusion assumed zero, so
+    # c05100 = c24580; Form 4972 lump-sum distributions not modeled)
+    c05700 = 0.
+    taxbc = c24580
     return (dwks10, dwks13, dwks14, dwks18, dwks43, c05700, taxbc)
 
 
 @iterate_jit(nopython=True)
 def AGIsurtax(c00100, MARS, AGI_surtax_trt, AGI_surtax_thd, taxbc, surtax):
     """
-    Computes surtax on AGI above some threshold.
+    Computes a flat surtax on the portion of Adjusted Gross Income (AGI)
+    above a MARS-indexed threshold.
+
+    Reform construct: there is no IRS form correspondence (the Internal
+    Revenue Code has no general AGI surtax line). Inert under current
+    law because `AGI_surtax_trt` defaults to 0.0 for all years and
+    `AGI_surtax_thd` defaults to 9e+99 for every MARS value.
+
+    When the rate is positive the same amount (`rate * max(0, AGI - thd)`)
+    is added to two accumulators:
+      - `taxbc` (regular tax on regular taxable income before credits)
+        so the surtax flows through `c05800` into `iitax` downstream;
+      - `surtax` (records-bound diagnostic accumulator, also incremented
+        by `FairShareTax` for the "Buffett Rule" reform construct).
+
+    Called in `Calculator.calc_all` after `GainsTax` (so `taxbc` already
+    reflects the rate-schedule + qualified-div/LTCG tax) and before
+    `NetInvIncTax` and `AMT`.
 
     Parameters
     ----------
     c00100: float
-        Adjusted Gross Income (AGI)
+        Adjusted Gross Income (Form 1040 line 11)
     MARS: int
-        Filing (marital) status. (1=single, 2=joint, 3=separate,
-                                  4=household-head, 5=widow(er))
+        Filing (marital) status (1=single, 2=joint, 3=separate,
+                                 4=household-head, 5=widow(er))
     AGI_surtax_trt: float
-        New AGI surtax rate
+        Reform-only flat surtax rate applied to AGI above
+        `AGI_surtax_thd[MARS-1]`. Default 0.0 (inert).
     AGI_surtax_thd: list
-        Threshold for the new AGI surtax
+        Reform-only MARS-indexed AGI threshold above which the surtax
+        applies. Default 9e+99 (inert).
     taxbc: float
-        Regular tax on regular taxable income before credits
+        Regular tax on regular taxable income before credits (input;
+        already includes rate-schedule + qualified-div/LTCG tax)
     surtax: float
-        Surtax on AGI above some threshold
+        Records-bound surtax accumulator (input)
 
     Returns
     -------
     taxbc: float
-        Regular tax on regular taxable income before credits
+        Input `taxbc` augmented by the AGI surtax
     surtax: float
-        Surtax on AGI above some threshold
+        Input `surtax` augmented by the AGI surtax
     """
+    # Reform construct: inert under current law (AGI_surtax_trt = 0).
     if AGI_surtax_trt > 0.:
-        hiAGItax = AGI_surtax_trt * max(c00100 - AGI_surtax_thd[MARS - 1], 0.)
-        taxbc += hiAGItax
-        surtax += hiAGItax
+        agi_surtax = AGI_surtax_trt * max(c00100 - AGI_surtax_thd[MARS - 1], 0.)
+        taxbc += agi_surtax
+        surtax += agi_surtax
     return (taxbc, surtax)
 
 
